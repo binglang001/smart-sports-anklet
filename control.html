@@ -1,0 +1,1353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>运动腿环控制系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #6b8e23 0%, #b8860b 100%);
+            color: #fff;
+            overflow-x: hidden;
+        }
+
+        /* 手机端样式 */
+        .mobile-view {
+            display: none;
+        }
+
+        .mobile-container {
+            max-width: 100vw;
+            height: 100vh;
+            padding: 10px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .mobile-header {
+            text-align: center;
+            padding: 10px 0;
+            border-bottom: 2px solid rgba(255,255,255,0.2);
+            margin-bottom: 10px;
+        }
+
+        .mobile-header h1 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .mobile-content {
+            flex: 1;
+            overflow-y: auto;
+            padding-right: 5px;
+        }
+
+        /* 模式滑块 */
+        .mode-slider-container {
+            background: rgba(255,255,255,0.15);
+            border-radius: 15px;
+            padding: 15px;
+            margin-bottom: 10px;
+        }
+
+        .mode-slider-title {
+            font-size: 14px;
+            margin-bottom: 10px;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        .mode-slider {
+            position: relative;
+            height: 50px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 25px;
+            margin-bottom: 10px;
+            cursor: pointer;
+        }
+
+        .mode-indicator {
+            position: absolute;
+            height: 100%;
+            width: 25%;
+            background: linear-gradient(135deg, #00ff88, #00ccff);
+            border-radius: 25px;
+            transition: left 0.3s ease;
+            left: 0%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 12px;
+            box-shadow: 0 4px 15px rgba(0,255,136,0.4);
+        }
+
+        .mode-labels {
+            display: flex;
+            justify-content: space-around;
+            font-size: 11px;
+            margin-top: 5px;
+        }
+
+        .mode-label {
+            flex: 1;
+            text-align: center;
+            padding: 5px;
+            opacity: 0.6;
+            transition: opacity 0.3s;
+        }
+
+        .mode-label.active {
+            opacity: 1;
+            font-weight: 600;
+        }
+
+        /* 统计卡片 */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .stat-card {
+            background: rgba(255,255,255,0.15);
+            border-radius: 12px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            margin: 5px 0;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            opacity: 0.8;
+        }
+
+        /* 传感器数据 */
+        .sensor-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .sensor-card {
+            background: rgba(255,255,255,0.15);
+            border-radius: 12px;
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .sensor-icon {
+            font-size: 24px;
+        }
+
+        .sensor-info {
+            text-align: right;
+        }
+
+        .sensor-value {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .sensor-label {
+            font-size: 10px;
+            opacity: 0.8;
+        }
+
+        /* 在线状态 */
+        .status-card {
+            background: rgba(255,255,255,0.15);
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ff4444;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.online {
+            background: #00ff88;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* 消息状态 */
+        .message-status-card {
+            background: rgba(255,255,255,0.15);
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 10px;
+        }
+
+        .message-status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #666;
+            margin-right: 8px;
+        }
+
+        .message-status-indicator.showing {
+            background: #00ff88;
+            animation: pulse 1s infinite;
+        }
+
+        /* 坐姿时长 */
+        .sitting-card {
+            background: rgba(255,255,255,0.15);
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 10px;
+        }
+
+        .sitting-progress {
+            height: 8px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 4px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+
+        .sitting-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #00ff88, #ffaa00);
+            transition: width 0.3s ease;
+        }
+
+        /* 紧急情况 */
+        .emergency-container {
+            background: rgba(255,255,255,0.15);
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 10px;
+        }
+
+        .emergency-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .emergency-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+
+        .emergency-content.expanded {
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+
+        .emergency-item {
+            background: rgba(255,68,68,0.2);
+            border-left: 3px solid #ff4444;
+            padding: 8px;
+            margin-bottom: 8px;
+            border-radius: 5px;
+            font-size: 11px;
+        }
+
+        /* 运动记录 */
+        .sport-records-container {
+            background: rgba(255,255,255,0.15);
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 10px;
+        }
+
+        .sport-record-item {
+            background: rgba(255,255,255,0.1);
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            font-size: 11px;
+        }
+
+        /* 控制按钮 */
+        .control-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .control-btn {
+            background: rgba(255,255,255,0.25);
+            border: none;
+            border-radius: 10px;
+            padding: 12px;
+            color: white;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .control-btn:active {
+            transform: scale(0.95);
+            background: rgba(255,255,255,0.35);
+        }
+
+        /* 设置弹窗 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            padding: 20px;
+            max-width: 90%;
+            max-height: 80%;
+            overflow-y: auto;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        .input-label {
+            display: block;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .input-field {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            font-size: 14px;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .modal-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .modal-btn-primary {
+            background: linear-gradient(135deg, #00ff88, #00ccff);
+            color: white;
+        }
+
+        .modal-btn-secondary {
+            background: rgba(255,255,255,0.2);
+            color: white;
+        }
+
+        /* 电脑端样式 */
+        .desktop-view {
+            display: none;
+        }
+
+        .desktop-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .desktop-header {
+            text-align: center;
+            padding: 30px 0;
+        }
+
+        .desktop-header h1 {
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .desktop-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+        }
+
+        .desktop-card {
+            background: rgba(255,255,255,0.15);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 25px;
+        }
+
+        .card-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid rgba(255,255,255,0.2);
+        }
+
+        .desktop-mode-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .mode-btn {
+            padding: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 15px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .mode-btn:hover {
+            background: rgba(255,255,255,0.2);
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+
+        .mode-btn.active {
+            border-color: #00ff88;
+            background: rgba(0,255,136,0.2);
+            box-shadow: 0 0 20px rgba(0,255,136,0.4);
+        }
+
+        .desktop-stats {
+            display: grid;
+            gap: 15px;
+        }
+
+        .desktop-stat-card {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .desktop-stat-value {
+            font-size: 32px;
+            font-weight: 700;
+        }
+
+        .desktop-stat-label {
+            font-size: 14px;
+            opacity: 0.8;
+            margin-top: 5px;
+        }
+
+        .message-input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 10px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .message-input::placeholder {
+            color: rgba(255,255,255,0.5);
+        }
+
+        .send-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #00ff88, #00ccff);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .send-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,255,136,0.3);
+        }
+
+        .exit-message-btn {
+            width: 100%;
+            padding: 15px;
+            background: rgba(255,100,100,0.6);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+
+        .exit-message-btn:hover {
+            background: rgba(255,100,100,0.8);
+        }
+
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .mobile-view { display: block; }
+            .desktop-view { display: none; }
+        }
+
+        @media (min-width: 769px) {
+            .mobile-view { display: none; }
+            .desktop-view { display: block; }
+        }
+
+        /* 滚动条样式 */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.1);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.3);
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <!-- 手机端界面 -->
+    <div class="mobile-view">
+        <div class="mobile-container">
+            <div class="mobile-header">
+                <h1>🏃 运动腿环</h1>
+            </div>
+
+            <div class="mobile-content">
+                <!-- 模式滑块 -->
+                <div class="mode-slider-container">
+                    <div class="mode-slider-title">当前模式</div>
+                    <div class="mode-slider" id="mobileSlider">
+                        <div class="mode-indicator" id="mobileIndicator">
+                            <span id="mobileModeName">生活</span>
+                        </div>
+                    </div>
+                    <div class="mode-labels">
+                        <div class="mode-label active">生活</div>
+                        <div class="mode-label">运动</div>
+                        <div class="mode-label">骑行</div>
+                        <div class="mode-label">会议</div>
+                    </div>
+                </div>
+
+                <!-- 统计数据 -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">今日运动</div>
+                        <div class="stat-value" id="mobileSportTime">0分</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">活动时长</div>
+                        <div class="stat-value" id="mobileActivityHours">0时</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">今日步数</div>
+                        <div class="stat-value" id="mobileStep">0步</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">今日减碳</div>
+                        <div class="stat-value" id="mobileCarbonReduce">0g</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">累计减碳</div>
+                        <div class="stat-value" id="mobileCarbonReduceAll">0g</div>
+                    </div>
+                </div>
+
+                <!-- 传感器数据 -->
+                <div class="sensor-grid">
+                    <div class="sensor-card">
+                        <div class="sensor-icon">🌡️</div>
+                        <div class="sensor-info">
+                            <div class="sensor-value" id="mobileTemp">--°C</div>
+                            <div class="sensor-label">温度</div>
+                        </div>
+                    </div>
+                    <div class="sensor-card">
+                        <div class="sensor-icon">💧</div>
+                        <div class="sensor-info">
+                            <div class="sensor-value" id="mobileHumi">--%</div>
+                            <div class="sensor-label">湿度</div>
+                        </div>
+                    </div>
+                    <div class="sensor-card">
+                        <div class="sensor-icon">🏃</div>
+                        <div class="sensor-info">
+                            <div class="sensor-value" id="mobilePace">--'--"</div>
+                            <div class="sensor-label">配速</div>
+                        </div>
+                    </div>
+                    <div class="sensor-card">
+                        <div class="sensor-icon">💡</div>
+                        <div class="sensor-info">
+                            <div class="sensor-value" id="mobileBrightness">--%</div>
+                            <div class="sensor-label">亮度</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 坐姿时长 -->
+                <div class="sitting-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span style="font-size: 14px; font-weight: 500;">🪑 坐姿时长</span>
+                        <span style="font-size: 12px; opacity: 0.8;" id="mobileSittingTime">0分钟</span>
+                    </div>
+                    <div style="font-size: 11px; opacity: 0.7; margin-bottom: 5px;" id="mobileSittingRemind">提醒倒计时: --</div>
+                    <div class="sitting-progress">
+                        <div class="sitting-progress-bar" id="mobileSittingProgress" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- 消息状态 -->
+                <div class="message-status-card">
+                    <div style="display: flex; align-items: center;">
+                        <span class="message-status-indicator" id="mobileMessageIndicator"></span>
+                        <span style="font-size: 14px; font-weight: 500;">消息状态</span>
+                    </div>
+                    <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;" id="mobileMessageStatus">无消息</div>
+                </div>
+
+                <!-- 在线状态 -->
+                <div class="status-card">
+                    <div>
+                        <div style="font-size: 14px; font-weight: 500;">设备状态</div>
+                        <div style="font-size: 11px; opacity: 0.7;" id="mobileLastUpdate">--</div>
+                    </div>
+                    <div class="status-indicator" id="mobileStatus"></div>
+                </div>
+
+                <!-- 紧急情况 -->
+                <div class="emergency-container">
+                    <div class="emergency-header" onclick="toggleMobileEmergency()">
+                        <div style="font-size: 14px; font-weight: 500;">
+                            🚨 紧急记录 (<span id="mobileEmergencyCount">0</span>)
+                        </div>
+                        <div style="font-size: 20px;" id="mobileEmergencyArrow">▼</div>
+                    </div>
+                    <div class="emergency-content" id="mobileEmergencyContent"></div>
+                </div>
+
+                <!-- 运动记录 -->
+                <div class="sport-records-container">
+                    <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="toggleMobileSportRecords()">
+                        <div style="font-size: 14px; font-weight: 500;">
+                            📊 运动记录 (<span id="mobileSportRecordsCount">0</span>)
+                        </div>
+                        <div style="font-size: 20px;" id="mobileSportRecordsArrow">▼</div>
+                    </div>
+                    <div class="emergency-content" id="mobileSportRecordsContent"></div>
+                </div>
+
+                <!-- 控制按钮 -->
+                <div class="control-buttons">
+                    <button class="control-btn" onclick="showMessageInput()">📧 发送消息</button>
+                    <button class="control-btn" onclick="showSittingSettings()">⚙️ 久坐设置</button>
+                    <button class="control-btn" onclick="refreshData()">🔄 刷新数据</button>
+                    <button class="control-btn" onclick="exitMessageDisplay()">❌ 退出消息</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 电脑端界面 -->
+    <div class="desktop-view">
+        <div class="desktop-container">
+            <div class="desktop-header">
+                <h1>🏃 运动腿环控制系统</h1>
+                <p style="opacity: 0.8; margin-top: 10px;">实时监控与智能管理</p>
+            </div>
+
+            <div class="desktop-grid">
+                <!-- 模式控制 -->
+                <div class="desktop-card">
+                    <div class="card-title">模式控制</div>
+                    <div class="desktop-mode-buttons">
+                        <button class="mode-btn active" onclick="changeMode(0)">
+                            🏠 生活模式
+                        </button>
+                        <button class="mode-btn" onclick="changeMode(1)">
+                            🏃 运动模式
+                        </button>
+                        <button class="mode-btn" onclick="changeMode(2)">
+                            🚴 骑行模式
+                        </button>
+                        <button class="mode-btn" onclick="changeMode(3)">
+                            🤐 会议模式
+                        </button>
+                    </div>
+
+                    <div style="margin-top: 30px;">
+                        <div class="card-title">发送消息</div>
+                        <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                            <span class="message-status-indicator" id="desktopMessageIndicator"></span>
+                            <span style="font-size: 14px;" id="desktopMessageStatus">无消息</span>
+                        </div>
+                        <input type="text" class="message-input" id="desktopMessageInput" 
+                               placeholder="输入消息内容...">
+                        <button class="send-btn" onclick="sendMessage()">发送消息</button>
+                        <button class="exit-message-btn" onclick="exitMessageDisplay()">退出消息显示</button>
+                    </div>
+
+                    <div style="margin-top: 30px;">
+                        <div class="card-title">久坐提醒设置</div>
+                        <div class="input-group">
+                            <label class="input-label">提醒时长（分钟）</label>
+                            <input type="number" class="input-field" id="desktopSittingDuration" 
+                                   placeholder="60" min="1" max="240">
+                        </div>
+                        <button class="send-btn" onclick="saveSittingSettings()">保存设置</button>
+                    </div>
+                </div>
+
+                <!-- 实时数据 -->
+                <div class="desktop-card">
+                    <div class="card-title">实时数据</div>
+                    <div class="desktop-stats">
+                        <div class="desktop-stat-card">
+                            <div>
+                                <div class="desktop-stat-value" id="desktopTemp">--°C</div>
+                                <div class="desktop-stat-label">🌡️ 温度</div>
+                            </div>
+                        </div>
+                        <div class="desktop-stat-card">
+                            <div>
+                                <div class="desktop-stat-value" id="desktopHumi">--%</div>
+                                <div class="desktop-stat-label">💧 湿度</div>
+                            </div>
+                        </div>
+                        <div class="desktop-stat-card">
+                            <div>
+                                <div class="desktop-stat-value" id="desktopPace">--'--"</div>
+                                <div class="desktop-stat-label">🏃 配速</div>
+                            </div>
+                        </div>
+                        <div class="desktop-stat-card">
+                            <div>
+                                <div class="desktop-stat-value" id="desktopStep">--'--"</div>
+                                <div class="desktop-stat-label">🏃 今日步数</div>
+                            </div>
+                        </div>
+                        <div class="desktop-stat-card">
+                            <div>
+                                <div class="desktop-stat-value" id="desktopCarbonReduce">--'--"</div>
+                                <div class="desktop-stat-label">🏃 今日减碳</div>
+                            </div>
+                        </div>
+                        <div class="desktop-stat-card">
+                            <div>
+                                <div class="desktop-stat-value" id="desktopCarbonReduceAll">--'--"</div>
+                                <div class="desktop-stat-label">🏃 累计减碳</div>
+                            </div>
+                        </div>
+                        <div class="desktop-stat-card">
+                            <div>
+                                <div class="desktop-stat-value" id="desktopBrightness">--%</div>
+                                <div class="desktop-stat-label">💡 亮度</div>
+                            </div>
+                        </div>
+                        <div class="desktop-stat-card">
+                            <div>
+                                <div class="desktop-stat-value" id="desktopSportTime">0分</div>
+                                <div class="desktop-stat-label">⏱️ 今日运动</div>
+                            </div>
+                        </div>
+                        <div class="desktop-stat-card">
+                            <div>
+                                <div class="desktop-stat-value" id="desktopActivityHours">0时</div>
+                                <div class="desktop-stat-label">✅ 活动时长</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 20px;">
+                        <div class="card-title">坐姿时长</div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <span style="font-size: 18px; font-weight: 600;" id="desktopSittingTime">0分钟</span>
+                            <span style="font-size: 14px; opacity: 0.7;" id="desktopSittingRemind">提醒倒计时: --</span>
+                        </div>
+                        <div class="sitting-progress">
+                            <div class="sitting-progress-bar" id="desktopSittingProgress" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 20px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <div style="font-size: 16px; font-weight: 500;">设备状态</div>
+                                <div style="font-size: 12px; opacity: 0.7; margin-top: 5px;" id="desktopLastUpdate">--</div>
+                            </div>
+                            <div class="status-indicator" id="desktopStatus"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 记录 -->
+                <div class="desktop-card">
+                    <div class="card-title">📊 运动记录</div>
+                    <div style="max-height: 300px; overflow-y: auto; margin-bottom: 20px;" id="desktopSportRecordsList">
+                        <div style="text-align: center; padding: 40px; opacity: 0.5;">
+                            暂无运动记录
+                        </div>
+                    </div>
+
+                    <div class="card-title">🚨 紧急记录</div>
+                    <div style="max-height: 300px; overflow-y: auto;" id="desktopEmergencyList">
+                        <div style="text-align: center; padding: 40px; opacity: 0.5;">
+                            暂无紧急记录
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 设置弹窗 -->
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-title">⚙️ 久坐提醒设置</div>
+            <div class="input-group">
+                <label class="input-label">提醒时长（分钟）</label>
+                <input type="number" class="input-field" id="modalSittingDuration" 
+                       placeholder="60" min="1" max="240">
+            </div>
+            <div class="modal-buttons">
+                <button class="modal-btn modal-btn-primary" onclick="saveModalSettings()">保存</button>
+                <button class="modal-btn modal-btn-secondary" onclick="closeModal()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentMode = 0;
+        let emergencyExpanded = false;
+        let sportRecordsExpanded = false;
+        let sittingRemindDuration = 3600;
+        const SERVER_URL = window.location.origin;
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            initMobileSlider();
+            loadSettings();
+            refreshData();
+            setInterval(refreshData, 2000);
+        });
+
+        // 手机端模式滑块
+        function initMobileSlider() {
+            const slider = document.getElementById('mobileSlider');
+            slider.addEventListener('click', function(e) {
+                const rect = slider.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const mode = Math.floor((x / rect.width) * 4);
+                changeMode(Math.min(mode, 3));
+            });
+        }
+
+        function updateMobileSlider(mode) {
+            const indicator = document.getElementById('mobileIndicator');
+            const modeName = document.getElementById('mobileModeName');
+            const labels = document.querySelectorAll('.mode-label');
+            const modeNames = ['生活', '运动', '骑行', '会议'];
+
+            indicator.style.left = (mode * 25) + '%';
+            modeName.textContent = modeNames[mode];
+
+            labels.forEach((label, index) => {
+                if (index === mode) {
+                    label.classList.add('active');
+                } else {
+                    label.classList.remove('active');
+                }
+            });
+        }
+
+        // 切换模式
+        function changeMode(mode) {
+            currentMode = mode;
+            
+            updateMobileSlider(mode);
+            
+            const desktopBtns = document.querySelectorAll('.mode-btn');
+            desktopBtns.forEach((btn, index) => {
+                if (index === mode) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+
+            fetch(`${SERVER_URL}/api/control`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    command: 'change_mode',
+                    mode: mode
+                })
+            }).catch(err => console.error('切换模式失败:', err));
+        }
+
+        // 刷新数据
+        async function refreshData() {
+            try {
+                const response = await fetch(`${SERVER_URL}/api/status`);
+                const data = await response.json();
+
+                updateUI(data);
+                
+                if (data.emergency) {
+                    showEmergencyAlert();
+                }
+            } catch (err) {
+                console.error('刷新数据失败:', err);
+            }
+
+            loadEmergencyRecords();
+            loadSportRecords();
+        }
+
+        // 更新UI
+        function updateUI(data) {
+            const sportMinutes = Math.floor(data.sport_time_today / 60);
+            const activityHours = data.activity_hours.length;
+            const stepCount = data.step;
+            const carbonReduce = data.carbon_reduce;
+            const carbonReduceAll = data.carbon_reduce_all;
+            const sittingMinutes = Math.floor(data.sitting_duration / 60);
+            const sittingProgress = Math.min((data.sitting_duration / sittingRemindDuration) * 100, 100);
+            const remainingTime = Math.max(sittingRemindDuration - data.sitting_duration, 0);
+            const remainingMinutes = Math.floor(remainingTime / 60);
+            const remainingSeconds = remainingTime % 60;
+
+            // 手机端
+            document.getElementById('mobileTemp').textContent = data.temperature + '°C';
+            document.getElementById('mobileHumi').textContent = data.humidity + '%';
+            document.getElementById('mobilePace').textContent = data.pace_str;
+            document.getElementById('mobileBrightness').textContent = Math.round(data.brightness / 255 * 100) + '%';
+            document.getElementById('mobileSportTime').textContent = sportMinutes + '分';
+            document.getElementById('mobileActivityHours').textContent = activityHours + '时';
+            document.getElementById('mobileStep').textContent = stepCount + '步';
+            document.getElementById('mobileCarbonReduce').textContent = carbonReduce + 'g';
+            document.getElementById('mobileCarbonReduceAll').textContent = carbonReduceAll + 'g';
+            document.getElementById('mobileSittingTime').textContent = sittingMinutes + '分钟';
+            document.getElementById('mobileSittingRemind').textContent = 
+                `提醒倒计时: ${remainingMinutes}分${remainingSeconds}秒`;
+            document.getElementById('mobileSittingProgress').style.width = sittingProgress + '%';
+            
+            const mobileStatus = document.getElementById('mobileStatus');
+            if (data.online) {
+                mobileStatus.classList.add('online');
+                document.getElementById('mobileLastUpdate').textContent = '在线 - ' + data.last_update;
+            } else {
+                mobileStatus.classList.remove('online');
+                document.getElementById('mobileLastUpdate').textContent = '离线 - ' + (data.last_update || '未知');
+            }
+
+            const mobileMessageIndicator = document.getElementById('mobileMessageIndicator');
+            const mobileMessageStatus = document.getElementById('mobileMessageStatus');
+            if (data.message_showing) {
+                mobileMessageIndicator.classList.add('showing');
+                mobileMessageStatus.textContent = '消息滚动显示中';
+            } else {
+                mobileMessageIndicator.classList.remove('showing');
+                mobileMessageStatus.textContent = '无消息';
+            }
+
+            // 电脑端
+            document.getElementById('desktopTemp').textContent = data.temperature + '°C';
+            document.getElementById('desktopHumi').textContent = data.humidity + '%';
+            document.getElementById('desktopPace').textContent = data.pace_str;
+            document.getElementById('desktopBrightness').textContent = Math.round(data.brightness / 255 * 100) + '%';
+            document.getElementById('desktopSportTime').textContent = sportMinutes + '分';
+            document.getElementById('desktopActivityHours').textContent = activityHours + '时';
+            document.getElementById('desktopStep').textContent = stepCount + '步';
+            document.getElementById('desktopCarbonReduce').textContent = carbonReduce + 'g';
+            document.getElementById('desktopCarbonReduceAll').textContent = carbonReduceAll + 'g';
+            document.getElementById('desktopActivityHours').textContent = activityHours + '时';
+            document.getElementById('desktopSittingTime').textContent = sittingMinutes + '分钟';
+            document.getElementById('desktopSittingRemind').textContent = 
+                `提醒倒计时: ${remainingMinutes}分${remainingSeconds}秒`;
+            document.getElementById('desktopSittingProgress').style.width = sittingProgress + '%';
+            
+            const desktopStatus = document.getElementById('desktopStatus');
+            if (data.online) {
+                desktopStatus.classList.add('online');
+                document.getElementById('desktopLastUpdate').textContent = '在线 - ' + data.last_update;
+            } else {
+                desktopStatus.classList.remove('online');
+                document.getElementById('desktopLastUpdate').textContent = '离线 - ' + (data.last_update || '未知');
+            }
+
+            const desktopMessageIndicator = document.getElementById('desktopMessageIndicator');
+            const desktopMessageStatus = document.getElementById('desktopMessageStatus');
+            if (data.message_showing) {
+                desktopMessageIndicator.classList.add('showing');
+                desktopMessageStatus.textContent = '消息滚动显示中';
+            } else {
+                desktopMessageIndicator.classList.remove('showing');
+                desktopMessageStatus.textContent = '无消息';
+            }
+
+            if (data.mode !== currentMode) {
+                currentMode = data.mode;
+                updateMobileSlider(currentMode);
+                
+                const desktopBtns = document.querySelectorAll('.mode-btn');
+                desktopBtns.forEach((btn, index) => {
+                    if (index === currentMode) {
+                        btn.classList.add('active');
+                    } else {
+                        btn.classList.remove('active');
+                    }
+                });
+            }
+        }
+
+        // 加载紧急记录
+        async function loadEmergencyRecords() {
+            try {
+                const response = await fetch(`${SERVER_URL}/api/emergency`);
+                const records = await response.json();
+
+                document.getElementById('mobileEmergencyCount').textContent = records.length;
+                const mobileContent = document.getElementById('mobileEmergencyContent');
+                mobileContent.innerHTML = '';
+                
+                records.slice(-5).reverse().forEach(record => {
+                    const item = document.createElement('div');
+                    item.className = 'emergency-item';
+                    item.innerHTML = `
+                        <div style="font-weight: 600; margin-bottom: 3px;">${record.time}</div>
+                        <div>${record.message}</div>
+                    `;
+                    mobileContent.appendChild(item);
+                });
+
+                const desktopList = document.getElementById('desktopEmergencyList');
+                if (records.length === 0) {
+                    desktopList.innerHTML = '<div style="text-align: center; padding: 40px; opacity: 0.5;">暂无紧急记录</div>';
+                } else {
+                    desktopList.innerHTML = '';
+                    records.reverse().forEach(record => {
+                        const item = document.createElement('div');
+                        item.style.cssText = 'background: rgba(255,68,68,0.2); border-left: 4px solid #ff4444; padding: 15px; margin-bottom: 15px; border-radius: 8px;';
+                        item.innerHTML = `
+                            <div style="font-weight: 600; margin-bottom: 8px;">${record.time}</div>
+                            <div style="margin-bottom: 8px;">${record.message}</div>
+                            <div style="font-size: 12px; opacity: 0.7;">位置: ${record.location}</div>
+                        `;
+                        desktopList.appendChild(item);
+                    });
+                }
+            } catch (err) {
+                console.error('加载紧急记录失败:', err);
+            }
+        }
+
+        // 加载运动记录
+        async function loadSportRecords() {
+            try {
+                const response = await fetch(`${SERVER_URL}/api/sport_records`);
+                const records = await response.json();
+
+                document.getElementById('mobileSportRecordsCount').textContent = records.length;
+                const mobileContent = document.getElementById('mobileSportRecordsContent');
+                mobileContent.innerHTML = '';
+                
+                records.slice(-5).reverse().forEach(record => {
+                    const item = document.createElement('div');
+                    item.className = 'sport-record-item';
+                    const duration = Math.floor(record.duration / 60);
+                    item.innerHTML = `
+                        <div style="font-weight: 600; margin-bottom: 3px;">${record.time}</div>
+                        <div>模式: ${record.mode} | 时长: ${duration}分钟</div>
+                        <div>平均配速: ${record.pace}</div>
+                    `;
+                    mobileContent.appendChild(item);
+                });
+
+                const desktopList = document.getElementById('desktopSportRecordsList');
+                if (records.length === 0) {
+                    desktopList.innerHTML = '<div style="text-align: center; padding: 40px; opacity: 0.5;">暂无运动记录</div>';
+                } else {
+                    desktopList.innerHTML = '';
+                    records.reverse().forEach(record => {
+                        const item = document.createElement('div');
+                        const duration = Math.floor(record.duration / 60);
+                        item.style.cssText = 'background: rgba(255,255,255,0.1); padding: 15px; margin-bottom: 15px; border-radius: 8px;';
+                        item.innerHTML = `
+                            <div style="font-weight: 600; margin-bottom: 8px;">${record.time}</div>
+                            <div style="margin-bottom: 5px;">模式: ${record.mode} | 时长: ${duration}分钟</div>
+                            <div style="font-size: 14px;">平均配速: ${record.pace}</div>
+                        `;
+                        desktopList.appendChild(item);
+                    });
+                }
+            } catch (err) {
+                console.error('加载运动记录失败:', err);
+            }
+        }
+
+        // 切换展开/收起
+        function toggleMobileEmergency() {
+            emergencyExpanded = !emergencyExpanded;
+            const content = document.getElementById('mobileEmergencyContent');
+            const arrow = document.getElementById('mobileEmergencyArrow');
+            
+            if (emergencyExpanded) {
+                content.classList.add('expanded');
+                arrow.textContent = '▲';
+            } else {
+                content.classList.remove('expanded');
+                arrow.textContent = '▼';
+            }
+        }
+
+        function toggleMobileSportRecords() {
+            sportRecordsExpanded = !sportRecordsExpanded;
+            const content = document.getElementById('mobileSportRecordsContent');
+            const arrow = document.getElementById('mobileSportRecordsArrow');
+            
+            if (sportRecordsExpanded) {
+                content.classList.add('expanded');
+                arrow.textContent = '▲';
+            } else {
+                content.classList.remove('expanded');
+                arrow.textContent = '▼';
+            }
+        }
+
+        // 显示紧急警报
+        function showEmergencyAlert() {
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification('🚨 紧急警报', {
+                    body: '检测到紧急情况，请立即查看！'
+                });
+            }
+            
+            if (window.innerWidth <= 768) {
+                emergencyExpanded = true;
+                document.getElementById('mobileEmergencyContent').classList.add('expanded');
+                document.getElementById('mobileEmergencyArrow').textContent = '▲';
+            }
+        }
+
+        // 发送消息
+        function sendMessage() {
+            const input = document.getElementById('desktopMessageInput');
+            const message = input.value.trim();
+            
+            if (!message) {
+                alert('请输入消息内容');
+                return;
+            }
+
+            fetch(`${SERVER_URL}/api/message`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({message: message})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'ok') {
+                    input.value = '';
+                    alert('消息已发送');
+                }
+            })
+            .catch(err => {
+                console.error('发送消息失败:', err);
+                alert('发送失败');
+            });
+        }
+
+        // 退出消息显示
+        function exitMessageDisplay() {
+            fetch(`${SERVER_URL}/api/control`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({command: 'exit_message'})
+            })
+            .then(() => {
+                alert('已请求退出消息显示');
+            })
+            .catch(err => {
+                console.error('退出消息失败:', err);
+            });
+        }
+
+        // 手机端消息输入
+        function showMessageInput() {
+            const message = prompt('请输入要发送的消息:');
+            if (message) {
+                fetch(`${SERVER_URL}/api/message`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: message})
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'ok') {
+                        alert('消息已发送');
+                    }
+                })
+                .catch(err => {
+                    console.error('发送消息失败:', err);
+                    alert('发送失败');
+                });
+            }
+        }
+
+        // 加载设置
+        async function loadSettings() {
+            try {
+                const response = await fetch(`${SERVER_URL}/api/settings`);
+                const data = await response.json();
+                sittingRemindDuration = data.sitting_remind_duration;
+                
+                document.getElementById('desktopSittingDuration').value = Math.floor(sittingRemindDuration / 60);
+                document.getElementById('modalSittingDuration').value = Math.floor(sittingRemindDuration / 60);
+            } catch (err) {
+                console.error('加载设置失败:', err);
+            }
+        }
+
+        // 保存设置
+        function saveSittingSettings() {
+            const minutes = parseInt(document.getElementById('desktopSittingDuration').value);
+            if (isNaN(minutes) || minutes < 1) {
+                alert('请输入有效的时长（分钟）');
+                return;
+            }
+
+            sittingRemindDuration = minutes * 60;
+
+            fetch(`${SERVER_URL}/api/settings`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({sitting_remind_duration: sittingRemindDuration})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'ok') {
+                    alert('设置已保存');
+                }
+            })
+            .catch(err => {
+                console.error('保存设置失败:', err);
+                alert('保存失败');
+            });
+        }
+
+        // 弹窗
+        function showSittingSettings() {
+            document.getElementById('modalSittingDuration').value = Math.floor(sittingRemindDuration / 60);
+            document.getElementById('settingsModal').classList.add('show');
+        }
+
+        function closeModal() {
+            document.getElementById('settingsModal').classList.remove('show');
+        }
+
+        function saveModalSettings() {
+            const minutes = parseInt(document.getElementById('modalSittingDuration').value);
+            if (isNaN(minutes) || minutes < 1) {
+                alert('请输入有效的时长（分钟）');
+                return;
+            }
+
+            sittingRemindDuration = minutes * 60;
+
+            fetch(`${SERVER_URL}/api/settings`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({sitting_remind_duration: sittingRemindDuration})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'ok') {
+                    alert('设置已保存');
+                    closeModal();
+                }
+            })
+            .catch(err => {
+                console.error('保存设置失败:', err);
+                alert('保存失败');
+            });
+        }
+
+        // 请求通知权限
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+    </script>
+</body>
+</html>
