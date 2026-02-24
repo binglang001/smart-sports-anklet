@@ -622,7 +622,7 @@ GET /api/history?days=7
     "carbon_reduce": 0.7392,
     "step": 5280
   },
-  "2024-01-14": {
+  "2025-01-14": {
     "sport_time": 30,
     "activity_hours": [15, 16],
     "carbon_reduce": 0.4928,
