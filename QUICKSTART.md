@@ -1,6 +1,6 @@
 # 快速开始指南
 
-这是一个5分钟快速部署指南，帮助你快速运行运动腿环系统。
+这是一个5分钟快速部署指南，帮助你快速运行运动腰带系统。
 
 ## 前提条件
 
@@ -8,6 +8,19 @@
 - [ ] 行空板M10 硬件
 - [ ] 传感器已连接（DHT11, LED, 按钮, 旋钮）
 - [ ] 服务器和行空板在同一网络
+
+## 系统架构
+
+```
+┌─────────────────┐        ┌─────────────────┐
+│   行空板M10     │  ←──→ │   PC服务器      │
+│   (client/)    │  WiFi │   (server/)     │
+│                │        │                 │
+│ - 传感器读取   │        │ - Web界面       │
+│ - 模式控制    │        │ - 数据存储      │
+│ - 语音播报    │        │ - API服务       │
+└─────────────────┘        └─────────────────┘
+```
 
 ## 步骤1：启动服务器 (2分钟)
 
@@ -22,7 +35,7 @@ cd path\to\smart-sports-anklet
 pip install -r requirements.txt
 
 # 4. 启动服务器
-python server.py
+start_server.bat
 ```
 
 ### Linux/Mac
@@ -36,8 +49,11 @@ cd path/to/smart-sports-anklet
 pip3 install -r requirements.txt
 
 # 4. 启动服务器
-python3 server.py
+chmod +x start_server.sh
+./start_server.sh
 ```
+
+服务器启动后访问：http://localhost:5000
 
 ## 步骤2：配置客户端 (1分钟)
 
@@ -45,16 +61,29 @@ python3 server.py
    - Windows: 打开cmd，输入 `ipconfig`，查看IPv4地址
    - Linux/Mac: 打开终端，输入 `ifconfig` 或 `hostname -I`
 
-2. 编辑 `client.py` 文件第20行：
+2. 编辑 `client/config.py` 文件：
    ```python
    SERVER_URL = "http://YOUR_IP:5000"  # 替换YOUR_IP为服务器实际IP
    ```
 
 ## 步骤3：部署到行空板 (2分钟)
 
-1. 连接行空板到电脑
-2. 使用MindPlus或其他工具上传 `client.py`
-3. 在行空板上运行程序
+1. 将整个 `client/` 文件夹上传到行空板
+2. 使用MindPlus上传程序
+3. 在行空板上运行：
+
+```bash
+cd client
+python3 main.py
+```
+
+或使用启动脚本（需要在行空板上创建）：
+
+```bash
+# 在行空板上创建启动脚本
+chmod +x start_client.sh
+./start_client.sh
+```
 
 ## 步骤4：验证系统 (1分钟)
 
@@ -63,7 +92,23 @@ python3 server.py
 3. 检查设备状态是否显示"在线"
 4. 行空板屏幕应显示系统界面
 
-## 完成！🎉
+## 功能说明
+
+### 四种运行模式
+
+| 模式 | 说明 | 界面显示 |
+|------|------|---------|
+| 生活模式 | 默认模式，监测坐姿和温湿度 | 温度、湿度、坐姿时长 |
+| 运动模式 | 记录步数、配速、运动时长 | 步数、配速、减碳量 |
+| 会议模式 | 屏幕关闭，LED关闭 | 黑屏 |
+
+### 操作说明
+
+- **短按按钮**：切换模式
+- **长按按钮**：查看当前温湿度/取消警报
+- **旋钮**：调节LED亮度
+
+## 完成！
 
 现在你可以：
 - ✅ 在Web界面查看实时数据

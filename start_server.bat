@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 echo ========================================
-echo     运动腿环系统 - 服务器启动脚本
+echo     运动腰带系统 - 服务器启动脚本
 echo ========================================
 echo.
 
@@ -48,6 +48,7 @@ echo [提示] 访问地址: http://localhost:5000
 echo.
 
 REM 启动服务器
+cd server
 python server.py
 
 pause
