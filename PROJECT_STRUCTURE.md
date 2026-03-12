@@ -1,139 +1,161 @@
 # 项目结构说明
 
-本文档说明智能运动腰带系统的文件组织结构。
+本文档用于说明当前仓库的主要目录、关键模块职责以及运行时数据的存放位置，便于后续维护、联调和二次开发。
 
 ## 目录树
 
-```
-smart-sports-anklet/
-│
-├── client/                      # 客户端程序（行空板端）
-│   ├── main.py                 # 主程序入口
-│   ├── config.py               # 客户端配置
-│   ├── sensors/                # 传感器模块
-│   │   ├── __init__.py
-│   │   ├── icm20689.py        # ICM20689加速度传感器读取（50Hz）
-│   │   ├── attitude.py         # 姿态角计算器
-│   │   ├── step_detector.py   # 步数检测器
-│   │   ├── posture_detector.py# 坐姿检测器
-│   │   ├── fall_detector.py   # 跌倒检测器
-│   │   └── gravity_remover.py # 重力去除
-│   ├── tools/                  # 数据分析工具
-│   │   ├── data_analyzer.py
-│   │   ├── data_collector.py
-│   │   ├── data_plotter.py
-│   │   └── step_counter.py
-│   └── utils/                  # 工具模块
-│       ├── __init__.py
-│       ├── debug.py            # 调试日志
-│       └── helpers.py          # 辅助函数
-│
-├── server/                     # 服务器程序（PC端）
-│   ├── server.py               # Flask服务器
-│   ├── control.html            # Web控制界面
-│   └── data/                   # 数据存储目录（运行时创建）
-│
-├── docs/                       # 文档和参考资料
-│   └── 论文/                   # 参考文献
-│
-├── start_server.bat           # Windows服务器启动脚本
-├── start_server.sh            # Linux服务器启动脚本
-│
-├── requirements.txt           # Python依赖
-├── LICENSE                   # MIT开源许可证
-├── README.md                 # 项目主文档
-├── QUICKSTART.md            # 快速开始指南
-└── PROJECT_STRUCTURE.md      # 本文档
+```text
+smart-sports-belt/
+├─ client/                         # 设备端程序（行空板 M10）
+│  ├─ main.py                      # 客户端主入口，集中管理模式、线程与状态
+│  ├─ config.py                    # 设备端配置项
+│  ├─ sensors/                     # 传感器访问与核心算法
+│  │  ├─ icm20689.py               # ICM20689 访问
+│  │  ├─ attitude.py               # 姿态角计算
+│  │  ├─ gravity_remover.py        # 重力去除
+│  │  ├─ step_detector.py          # 步数检测
+│  │  ├─ posture_detector.py       # 姿态识别
+│  │  ├─ fall_detector.py          # 跌倒检测
+│  │  └─ high_freq_sampler.py      # 高频采样器
+│  ├─ services/                    # 设备端服务模块
+│  │  ├─ gnss_manager.py           # GNSS 驱动封装与轨迹能力
+│  │  └─ offline_manager.py        # 离线缓存与恢复同步
+│  ├─ ui/                          # 屏幕与模式显示逻辑
+│  │  ├─ message_scroller.py       # 消息滚动显示
+│  │  ├─ screen_manager.py         # 屏幕元素管理
+│  │  ├─ life_mode.png             # 生活模式资源图
+│  │  └─ sport_mode.png            # 运动模式资源图
+│  ├─ tools/                       # 离线采集、分析、绘图工具
+│  └─ utils/                       # 日志、调试、辅助函数
+├─ server/                         # Flask 服务端与网页端资源
+│  ├─ server.py                    # 服务端主入口
+│  ├─ control.html                 # 控制台页面
+│  ├─ history.html                 # 历史记录页面
+│  ├─ sport_record_detail.html     # 运动详情页面
+│  └─ data/                        # 服务端运行数据（JSON）
+├─ data/                           # 顶层运行时数据目录
+├─ debug_data/                     # 调试导出数据与图表
+├─ logs/                           # 日志目录
+├─ README.md                       # 项目主文档
+├─ QUICKSTART.md                   # 快速启动指南
+├─ PROJECT_STRUCTURE.md            # 本文档
+├─ requirements.txt                # 服务端依赖
+├─ start_server.bat                # Windows 启动脚本
+└─ start_server.sh                 # Linux/macOS 启动脚本
 ```
 
----
+## 关键模块说明
 
-## 核心文件说明
+### `client/main.py`
 
-### 客户端模块 (client/)
+- 设备端运行入口
+- 负责模式切换、传感器读取、线程调度、状态汇总与上报
+- 当前仓库中大部分运行时状态集中在这里
 
-| 文件 | 功能描述 |
-|------|---------|
-| main.py | 主程序入口，处理3种模式（生活/运动/会议） |
-| config.py | 客户端配置参数 |
-| sensors/icm20689.py | 直接读取ICM20689，实现50Hz高频采样 |
-| sensors/step_detector.py | 基于多阈值算法的步数检测 |
-| sensors/posture_detector.py | 基于Y轴分量和Roll角的坐姿检测 |
-| sensors/fall_detector.py | 基于多特征融合的跌倒检测 |
-| sensors/attitude.py | 姿态角计算（俯仰角/翻滚角） |
-| sensors/gravity_remover.py | 基于低通滤波的重力去除 |
-| utils/debug.py | 调试数据记录器 |
-| utils/helpers.py | 配速计算等辅助函数 |
+### `client/config.py`
 
-### 服务器模块 (server/)
+- 设备端集中配置文件
+- 包含服务端地址、硬件引脚、GNSS 参数、步数/姿态/跌倒阈值等
 
-| 文件 | 功能描述 |
-|------|---------|
-| server.py | Flask Web服务器，提供API接口 |
-| control.html | 响应式Web控制界面 |
-| data/ | 运动记录存储目录 |
+### `client/sensors/`
 
----
+算法与底层传感器访问主要集中在这里：
 
-## 启动说明
+- `icm20689.py`：惯性传感器读取
+- `high_freq_sampler.py`：高频采样线程
+- `gravity_remover.py`：重力分量去除
+- `step_detector.py`：步数检测逻辑
+- `posture_detector.py`：姿态识别逻辑
+- `fall_detector.py`：跌倒检测逻辑
+- `attitude.py`：姿态角与辅助计算
 
-### 1. 启动服务器（PC端）
+### `client/services/`
 
-```bash
-# Windows
-start_server.bat
+存放与“算法本体”相对独立的业务服务：
 
-# Linux/Mac
-chmod +x start_server.sh
-./start_server.sh
-```
+- `gnss_manager.py`：GNSS 驱动加载、定位点读取、速度/航向获取
+- `offline_manager.py`：网络异常时缓存记录，恢复后自动补传
 
-服务器启动后访问：http://localhost:5000
+### `client/ui/`
 
-### 2. 启动客户端（行空板端）
+负责屏幕与消息展示层逻辑：
 
-```bash
-cd client
-python main.py
-```
+- 模式界面切换
+- 滚动消息显示
+- 屏幕元素创建与隐藏
 
----
+### `client/tools/`
 
-## 配置文件说明
+主要用于开发与调试阶段的数据辅助：
 
-### 客户端配置 (client/config.py)
+- 数据采集
+- 离线分析
+- 曲线绘图
+- 算法验证
 
-```python
-# 服务器地址
-SERVER_URL = "http://your-server-ip:5000"
+这些脚本不属于设备端主运行链路，但对调参和复盘很重要。
 
-# 硬件引脚
-PIN_DHT11 = "P22"      # 温湿度传感器
-PIN_TOUCH = "P24"      # 按钮
-PIN_KNOB = "P23"       # 旋钮
-PIN_LED = "P21"         # LED灯带
+### `client/utils/`
 
-# 模式定义
-MODE_LIFE = 0      # 生活模式
-MODE_SPORT = 1     # 运动模式
-MODE_MEETING = 2   # 会议模式
-```
+提供公共能力，例如：
 
----
+- 日志管理
+- 调试记录
+- 配速、距离、减碳等辅助计算
 
-## 数据文件
+### `server/server.py`
 
-### 服务器数据 (server/data/)
+Flask 服务端主入口，负责：
 
-| 文件 | 说明 |
-|------|------|
-| emergency.json | 紧急事件记录 |
-| history.json | 历史运动数据 |
-| sport_records.json | 运动记录详情 |
-| settings.json | 系统设置 |
+- 接收设备端状态上报
+- 保存历史记录、运动记录和设置项
+- 提供 Web 页面和 JSON API
+- 处理控制指令和离线同步请求
 
-### 客户端调试数据 (debug_data/)
+### `server/*.html`
 
-| 文件 | 说明 |
-|------|------|
-| debug_*.csv | 调试数据文件（启用DEBUG_ENABLED时生成） |
+网页端页面：
+
+- `control.html`：主控制台
+- `history.html`：历史记录页
+- `sport_record_detail.html`：运动详情页
+
+## 运行时数据目录
+
+### `server/data/`
+
+用于保存服务端 JSON 数据，例如：
+
+- `settings.json`
+- `history.json`
+- `sport_records.json`
+- `emergency.json`
+
+### `data/`
+
+顶层运行数据目录，通常用于本地联调或设备端输出的临时数据。
+
+### `debug_data/`
+
+用于保存调试阶段导出的：
+
+- 原始采样 CSV
+- 调试图表
+- 离线分析结果
+
+### `logs/`
+
+保存程序运行日志。当前项目倾向于将同一次运行写入同一日志文件，便于排查问题。
+
+## 建议阅读顺序
+
+如果你第一次阅读这个项目，建议按下面顺序查看：
+
+1. `README.md`
+2. `QUICKSTART.md`
+3. `client/main.py`
+4. `client/sensors/`
+5. `client/services/`
+6. `server/server.py`
+
+这样更容易从整体架构逐步进入具体实现。

@@ -1,4 +1,4 @@
-# smart-sports-anklet
+# smart-sports-belt
 
 ## Scope
 - This `AGENTS.md` applies to the entire repository.

@@ -32,8 +32,8 @@ fi
 echo ""
 
 # 创建数据目录
-if [ ! -d "data" ]; then
-    mkdir data
+if [ ! -d "server/data" ]; then
+    mkdir -p server/data
 fi
 echo "[3/3] 数据目录准备完成 ✓"
 echo ""

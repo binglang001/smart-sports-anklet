@@ -163,8 +163,10 @@ class HighFrequencySampler:
                     linear_x, linear_y, linear_z = self._gravity_remover.add_sample(
                         ax, ay, az, gx, gy, gz, timestamp
                     )
+                    gravity_x, gravity_y, gravity_z = self._gravity_remover.get_gravity()
                 else:
                     linear_x, linear_y, linear_z = ax, ay, az
+                    gravity_x, gravity_y, gravity_z = 0.0, 0.0, 0.0
 
                 linear_mag = math.sqrt(linear_x**2 + linear_y**2 + linear_z**2)
 
@@ -179,6 +181,9 @@ class HighFrequencySampler:
                         'gx': gx if gx else 0,
                         'gy': gy if gy else 0,
                         'gz': gz if gz else 0,
+                        'gravity_x': gravity_x,
+                        'gravity_y': gravity_y,
+                        'gravity_z': gravity_z,
                         'linear_x': linear_x,
                         'linear_y': linear_y,
                         'linear_z': linear_z,
@@ -258,7 +263,7 @@ def get_latest_acceleration():
     """获取最新加速度值"""
     sampler = get_sampler()
     ax, ay, az, mag = sampler.get_latest_linear()
-    return ax, ay, az
+    return ax, ay, az, mag
 
 
 def get_sample_buffer():

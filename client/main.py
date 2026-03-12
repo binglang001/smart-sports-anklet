@@ -22,15 +22,33 @@ import threading
 import math
 import signal
 import sys
-import os
-import json
 import requests
 import traceback
+from collections import deque
 from datetime import datetime, timedelta
+from statistics import median
 
 # 导入日志模块
 from utils.logger import get_logger
+from services import GNSSManager, GNSS_AVAILABLE, OfflineManager
+from ui import RotatedMessageScroller, create_ui_elements, hide_all_ui as hide_ui_elements, update_ui_mode as apply_ui_mode
 logger = get_logger('main')
+
+
+_throttled_log_times = {}
+_throttled_log_lock = threading.Lock()
+
+
+def log_throttled(level, key, message, interval=30):
+    """按 key 节流日志输出"""
+    now = time.time()
+    with _throttled_log_lock:
+        last_time = _throttled_log_times.get(key, 0)
+        if now - last_time < interval:
+            return
+        _throttled_log_times[key] = now
+
+    getattr(logger, level)(message)
 
 # ==================== 传感器模块（核心算法）====================
 # 使用sensors模块版本
@@ -228,17 +246,6 @@ except ImportError:
     logger.warning("硬件库不可用（可能在模拟环境中）")
 
 
-# ==================== GNSS模块 ====================
-GNSS_AVAILABLE = False
-try:
-    import sys
-    sys.path.append("/root/mindplus/.lib/thirdExtension/liliang-gravitygnss-thirdex")
-    from DFRobot_GNSS import *
-    GNSS_AVAILABLE = True
-except ImportError:
-    logger.warning("GNSS模块不可用")
-
-
 # ==================== 配置 ====================
 SERVER_URL = config.SERVER_URL
 UPDATE_INTERVAL = config.UPDATE_INTERVAL
@@ -262,6 +269,7 @@ MODE_LIFE = config.MODE_LIFE
 MODE_SPORT = config.MODE_SPORT
 MODE_MEETING = config.MODE_MEETING
 MODE_NAMES = ["生活模式", "运动模式", "会议模式"]
+VALID_MODES = tuple(range(len(MODE_NAMES)))
 MODE_COLORS = ["#000000", "#000000", "#000000"]
 LINE_COLORS = ["#00FF00", "#FFFF00", "#8888FF"]
 
@@ -309,33 +317,149 @@ sport_pace_total_distance = 0.0  # 运动期间总距离(km)
 sport_pace_total_time = 0.0  # 运动期间总时间(秒)
 sport_pace_start_time = None  # 第一次有效配速计时开始时间
 
-# GPS速度读取计时器（10秒）
+# GPS速度读取计时器
 gps_speed_read_time = None  # 上次读取GPS速度的时间
 gps_current_speed = None  # 当前GPS速度(km/h)
 
 # GNSS有效状态
-gnss_valid = False  # GNSS是否有效（卫星数>4）
+gnss_valid = False  # GNSS是否有效（达到可用卫星数阈值）
 gnss_last_check_time = None  # 上次检查GNSS有效性的时间
 gnss_searching = False  # 是否正在搜星
 gnss_search_start_time = None  # 搜星开始时间
 gnss_search_thread = None  # 搜星线程
+gnss_next_search_time = 0.0  # 下次允许重新搜星的时间
+gnss_initial_search_done = False  # 本次运动模式是否已启动过首次搜星
+gnss_search_disabled_for_session = False  # 本次运动模式是否禁止再次搜星
+gnss_last_health_check_time = None  # 上次5秒卫星健康检查时间
 
 # 步数配速计算计时器
 step_pace_start_time = None  # 步数配速计算开始时间
 step_pace_last_step = 0  # 上次记录的步数
 step_pace_accumulated_distance = 0.0  # 步数配速累计距离
 step_pace_accumulated_time = 0.0  # 步数配速累计时间
+sport_session_start_step = None  # 本次运动开始时的累计步数
+
+# 运动记录曲线（低频采样，减少算力与存储开销）
+SPORT_SERIES_INTERVAL = 5.0  # 秒
+sport_series = []
+sport_series_last_ts = None
+sport_series_last_step = 0
+sport_series_last_point_ts = 0.0
+sport_session_distance_km = 0.0
+sport_last_stride_m = config.STEP_LENGTH_NORMAL
+sport_last_cadence_spm = 0.0
+
+GNSS_RUNTIME_CONFIG = getattr(config, 'GNSS_CONFIG', {}) or {}
+GNSS_TRACK_INTERVAL = float(GNSS_RUNTIME_CONFIG.get('track_interval', 1.0))
+GNSS_PACE_INTERVAL_SEC = float(GNSS_RUNTIME_CONFIG.get('pace_speed_interval_sec', 5.0))
+PACE_VALID_MIN_MIN_PER_KM = float(GNSS_RUNTIME_CONFIG.get('pace_valid_min_min_per_km', 3.0))
+PACE_VALID_MAX_MIN_PER_KM = float(GNSS_RUNTIME_CONFIG.get('pace_valid_max_min_per_km', 8.0))
+GNSS_SEARCH_RETRY_INTERVAL = float(GNSS_RUNTIME_CONFIG.get('search_retry_interval', 15.0))
+GNSS_HEALTH_CHECK_INTERVAL_SEC = 5.0
+sport_gnss_track = []
+sport_gnss_last_point = None
+sport_gnss_last_track_ts = 0.0
+sport_gnss_distance_km = 0.0
+sport_gnss_fix_samples = 0
+sport_gnss_total_samples = 0
+sport_gnss_satellite_max = 0
+sport_gnss_latest_point = None
+sport_gnss_last_step_count = None
 
 # UI元素
 ui_elements = {}
 message_showing = False
 current_message = ""
-message_scroll_thread = None
+message_scroller = None
 meeting_black_rect = None
 
 # 步数记录
 last_sent_step = 0
 led_position = 0
+
+
+def _set_message_scroller_state(is_showing, message):
+    """同步滚动消息状态到主程序全局变量。"""
+    global message_showing, current_message
+    message_showing = is_showing
+    current_message = message
+
+
+def ensure_message_scroller():
+    """按需创建滚动消息控制器。"""
+    global message_scroller
+
+    if message_scroller is None:
+        scroll_config = getattr(config, 'MESSAGE_SCROLL_CONFIG', {})
+        message_scroller = RotatedMessageScroller(
+            gui_getter=lambda: gui,
+            hide_ui_callback=hide_all_ui,
+            restore_ui_callback=update_ui_mode,
+            speak_callback=add_voice,
+            stop_voice_callback=stop_all_voice,
+            is_running_callback=lambda: running,
+            is_emergency_callback=lambda: emergency_mode,
+            state_change_callback=_set_message_scroller_state,
+            text_x=scroll_config.get('text_x', 0),
+            font_size=scroll_config.get('font_size', 129),
+            scroll_speed=scroll_config.get('scroll_speed', 74.0),
+            frame_time=scroll_config.get('frame_time', 0.033),
+            start_offset_ratio=scroll_config.get('start_offset_ratio', 0.9),
+            initial_y_compensation=scroll_config.get('initial_y_compensation', 0),
+            tail_gap_ratio=scroll_config.get('tail_gap_ratio', 0.25),
+            min_tail_gap=scroll_config.get('min_tail_gap', 12),
+        )
+    return message_scroller
+
+
+def restore_today_stats_from_server():
+    """启动时从服务端恢复今日统计，避免设备端与服务端口径不一致。"""
+    global step_count, carbon_reduce_count, sport_time_today, activity_hours
+
+    try:
+        response = requests.get(f"{SERVER_URL}/api/status", timeout=5)
+        if response.status_code != 200:
+            logger.info(f"服务端今日统计恢复跳过: HTTP {response.status_code}")
+            return False
+
+        data = response.json() or {}
+        restored_step = max(0, int(data.get("step", 0) or 0))
+        restored_carbon = round(float(data.get("carbon_reduce", 0) or 0), 2)
+        restored_sport_time = max(0, int(data.get("sport_time_today", 0) or 0))
+
+        restored_hours = set()
+        for hour in data.get("activity_hours", []) or []:
+            try:
+                hour_value = int(hour)
+                if 0 <= hour_value <= 23:
+                    restored_hours.add(hour_value)
+            except Exception:
+                pass
+
+        step_count = restored_step
+        carbon_reduce_count = max(0, restored_carbon)
+        sport_time_today = restored_sport_time
+        activity_hours = restored_hours
+
+        if step_detector:
+            try:
+                step_detector.set_count(step_count)
+            except Exception as e:
+                logger.warning(f"恢复今日步数后设置检测器失败: {e}")
+
+        logger.info(
+            f"已从服务端恢复今日统计: 步数={step_count}, 减碳={carbon_reduce_count}g, "
+            f"运动时长={sport_time_today}s"
+        )
+        return True
+    except Exception as e:
+        logger.info(f"服务端今日统计恢复失败，继续使用本地计数: {e}")
+        return False
+
+
+def is_valid_mode(mode):
+    """判断模式值是否合法"""
+    return isinstance(mode, int) and mode in VALID_MODES
 
 
 # ==================== 退出处理 ====================
@@ -385,149 +509,26 @@ def init_ui():
     if not gui:
         return
 
-    # 清空旧UI
     gui.clear()
-    ui_elements = {}
-
-    # ========== 创建生活模式UI元素 ==========
-    # 背景（先创建）
-    ui_elements['background_life'] = gui.draw_image(image="ui/life_mode.png", x=0, y=0)
-
-    # 温度
-    ui_elements['temp_text'] = gui.draw_text(
-        text="--°C",
-        x=178, y=223,
-        font_size=11, color="#F17D30", angle=90, origin='center'
-    )
-
-    # 湿度
-    ui_elements['humi_text'] = gui.draw_text(
-        text="-- %",
-        x=201, y=221,
-        font_size=11, color="#5A84F2", angle=90, origin='center'
-    )
-
-    # 坐姿时长
-    ui_elements['sitting_text'] = gui.draw_text(
-        text="0分钟",
-        x=213, y=217,
-        font_size=11, color="#000000", angle=90
-    )
-
-    # 环境状态
-    ui_elements['env_status'] = gui.draw_text(
-        text="适宜",
-        x=175, y=115,
-        font_size=18, color="#808080", angle=90, origin='center'
-    )
-
-    # ========== 创建运动模式UI元素 ==========
-    # 背景
-    ui_elements['background_sport'] = gui.draw_image(image="ui/sport_mode.png", x=0, y=0)
-
-    # 步数
-    ui_elements['step_text'] = gui.draw_text(
-        text="0 步",
-        x=197, y=280,
-        font_size=11, color="#000000", angle=90, origin='center'
-    )
-
-    # 配速
-    ui_elements['pace_text'] = gui.draw_text(
-        text="--'--\"",
-        x=220, y=245,
-        font_size=11, color="#000000", angle=90
-    )
-
-    # 减碳量
-    ui_elements['carbon_reduce_text'] = gui.draw_text(
-        text="0.00g",
-        x=181, y=95,
-        font_size=18, color="#8AD70D", angle=90, origin='center'
-    )
-
-    # ========== 创建会议模式UI元素 ==========
-    # 黑色背景
-    ui_elements['meeting_black'] = gui.fill_rect(x=0, y=0, w=240, h=320, color="#000000")
-
-    # ========== 时间文本（最后创建，确保显示在最前面）==========
-    ui_elements['time_text'] = gui.draw_text(
-        text="00:00:00",
-        x=0, y=320,
-        font_size=25, color="#000000", angle=90
-    )
-
-    # 根据当前模式显示对应的UI
+    ui_elements = create_ui_elements(gui)
     update_ui_mode()
 
 
 def update_ui_mode():
     """根据模式更新UI显示 - 隐藏/显示方式"""
-    global ui_elements
-
-    if message_showing:
-        return
-
-    # 隐藏所有模式的UI元素
-    hide_all_ui()
-
-    # 显示当前模式的UI元素
-    if current_mode == MODE_LIFE:
-        # 显示生活模式UI
-        ui_elements['background_life'].config(state='normal')
-        ui_elements['time_text'].config(state='normal')
-        ui_elements['temp_text'].config(state='normal')
-        ui_elements['humi_text'].config(state='normal')
-        ui_elements['sitting_text'].config(state='normal')
-        ui_elements['env_status'].config(state='normal')
-
-    elif current_mode == MODE_SPORT:
-        # 显示运动模式背景
-        ui_elements['background_sport'].config(state='normal')
-        # 显示时间文本（最后创建，显示在最前面）
-        ui_elements['time_text'].config(state='normal')
-        ui_elements['step_text'].config(state='normal')
-        ui_elements['pace_text'].config(state='normal')
-        ui_elements['carbon_reduce_text'].config(state='normal')
-
-    elif current_mode == MODE_MEETING:
-        # 会议模式显示黑色背景
-        ui_elements['meeting_black'].config(state='normal')
+    apply_ui_mode(
+        ui_elements=ui_elements,
+        current_mode=current_mode,
+        message_showing=message_showing,
+        mode_life=MODE_LIFE,
+        mode_sport=MODE_SPORT,
+        mode_meeting=MODE_MEETING,
+    )
 
 
 def hide_all_ui():
     """隐藏所有UI元素"""
-    global ui_elements
-
-    # 生活模式UI
-    if 'background_life' in ui_elements:
-        ui_elements['background_life'].config(state='hidden')
-    if 'temp_text' in ui_elements:
-        ui_elements['temp_text'].config(state='hidden')
-    if 'humi_text' in ui_elements:
-        ui_elements['humi_text'].config(state='hidden')
-    if 'sitting_text' in ui_elements:
-        ui_elements['sitting_text'].config(state='hidden')
-    if 'env_status' in ui_elements:
-        ui_elements['env_status'].config(state='hidden')
-
-    # 运动模式UI
-    if 'background_sport' in ui_elements:
-        ui_elements['background_sport'].config(state='hidden')
-    if 'step_text' in ui_elements:
-        ui_elements['step_text'].config(state='hidden')
-    if 'pace_text' in ui_elements:
-        ui_elements['pace_text'].config(state='hidden')
-    if 'carbon_reduce_text' in ui_elements:
-        ui_elements['carbon_reduce_text'].config(state='hidden')
-
-    # 会议模式UI
-    if 'meeting_black' in ui_elements:
-        ui_elements['meeting_black'].config(state='hidden')
-
-    # 共用UI
-    if 'time_text' in ui_elements:
-        ui_elements['time_text'].config(state='hidden')
+    hide_ui_elements(ui_elements)
 
 
 # ==================== 环境状态判断 ====================
@@ -774,117 +775,26 @@ def report_sport_mode_status():
 # ==================== 消息滚动显示 ====================
 def show_message_scroll(message):
     """显示滚动消息"""
-    global message_showing, current_message, message_scroll_thread
-
-    stop_all_voice()
-
-    if message_scroll_thread and message_scroll_thread.is_alive():
-        message_showing = False
-        time.sleep(0.3)
-
-    current_message = message
-
-    for key in ui_elements:
-        try:
-            ui_elements[key].config(state='hidden')
-        except:
-            pass
-
-    time.sleep(0.1)
-    message_showing = True
-    add_voice(message)
-
-    message_scroll_thread = threading.Thread(target=scroll_message_thread,
-                                            args=(message,), daemon=True)
-    message_scroll_thread.start()
-
-
-def scroll_message_thread(message):
-    """滚动消息线程"""
-    global message_showing, current_message
-
-    time.sleep(0.1)
-
-    punctuation = ['，', '。', '、', '！', '？', '；', '：', '…', ',', '.', '!', '?', ';', ':', '\'', '"', '"', '"', ''', ''']
-    processed_chars = []
-    temp_char = ""
-
-    for char in message:
-        if char in punctuation:
-            temp_char += char
-        else:
-            if temp_char:
-                processed_chars.append(temp_char)
-            temp_char = char
-
-    if temp_char:
-        processed_chars.append(temp_char)
-
-    vertical_message = '\n'.join(processed_chars)
-    text_color = "#FF0000" if emergency_mode else "#000000"
-    font_size = 140
-
-    if not gui:
-        return
-
-    white_bg = gui.fill_rect(x=0, y=0, w=240, h=320, color="#FFFFFF")
-
-    if "," in vertical_message or "，" in vertical_message:
-        scroll_text = gui.draw_text(x=200, y=320, text=vertical_message,
-                                color=text_color, font_size=font_size, anchor="n")
-    else:
-        scroll_text = gui.draw_text(x=120, y=320, text=vertical_message,
-                                    color=text_color, font_size=font_size, anchor="n")
-
-    scroll_speed = 80
-    frame_time = 0.033
-
-    start_time = time.perf_counter()
-    screen_height = 320
-    line_height = int(font_size * 1.2)
-    text_height = len(processed_chars) * line_height
-    total_scroll_distance = text_height + screen_height
-    total_scroll_time = total_scroll_distance / scroll_speed
-
-    while message_showing and running and current_message == message:
-        elapsed = time.perf_counter() - start_time
-        scroll_progress = (elapsed % total_scroll_time) / total_scroll_time
-        y_pos = screen_height - int(scroll_progress * total_scroll_distance)
-
-        try:
-            scroll_text.config(y=y_pos)
-        except:
-            break
-
-        time.sleep(frame_time)
-
-    try:
-        scroll_text.remove()
-        white_bg.remove()
-    except:
-        pass
+    ensure_message_scroller().show(message)
 
 
 def exit_message_scroll():
     """退出消息滚动"""
-    global message_showing, current_message
-
-    message_showing = False
-    current_message = ""
-    stop_all_voice()
-
-    time.sleep(0.5)
-
-    # 恢复UI显示
-    update_ui_mode()
+    ensure_message_scroller().hide()
 
 
 # ==================== 语音合成 ====================
-def add_voice(text):
+def add_voice(text, force=False):
     """添加语音到队列"""
-    if voice_enabled:
-        voice_queue.append(text)
-        logger.info(f"语音播报: {text}")
+    if not voice_enabled:
+        return
+
+    if current_mode == MODE_MEETING and not force:
+        logger.debug(f"会议模式静音，跳过语音: {text}")
+        return
+
+    voice_queue.append({"text": text, "force": force})
+    logger.info(f"语音播报: {text}")
 
 
 def stop_all_voice():
@@ -900,8 +810,9 @@ def stop_all_voice():
 def voice_thread():
     """语音播报线程"""
     while running:
-        if voice_queue and voice_enabled and current_mode:
-            text = voice_queue.pop(0)
+        if voice_queue and voice_enabled:
+            item = voice_queue.pop(0)
+            text = item.get("text", "") if isinstance(item, dict) else item
             try:
                 if tts:
                     tts.speak(text)
@@ -1132,8 +1043,17 @@ def detect_step():
                         linear_x = sample.get('linear_x', 0)
                         linear_y = sample.get('linear_y', 0)
                         linear_z = sample.get('linear_z', 0)
-                        # 传入None让step_detector不做额外重力去除，直接使用linear值
-                        detected, step_record = step_detector.add_sample(linear_x, linear_y, linear_z, None, None, None)
+                        detected, step_record = step_detector.add_sample(
+                            linear_x,
+                            linear_y,
+                            linear_z,
+                            None,
+                            None,
+                            None,
+                            timestamp=sample.get('timestamp'),
+                            already_linear=True,
+                            raw_acc=(sample.get('ax', linear_x), sample.get('ay', linear_y), sample.get('az', linear_z))
+                        )
 
                     # 清空缓冲区
                     sampler.clear_buffer()
@@ -1275,6 +1195,20 @@ def detect_fall():
     return False
 
 
+def trigger_fall_alarm():
+    """统一触发跌倒告警流程"""
+    global fall_detected
+
+    if fall_detected:
+        return
+
+    logger.warning("检测到摔倒！")
+    fall_detected = True
+    stop_all_voice()
+    add_voice("检测到摔倒，是否需要帮助？长按取消警报")
+    threading.Thread(target=emergency_countdown, daemon=True).start()
+
+
 def detect_movement():
     """检测是否有运动"""
     global last_movement_time
@@ -1292,15 +1226,255 @@ def detect_movement():
 last_update_time = None
 
 
+def _pace_str_to_sec_per_km(pace_str):
+    """将配速字符串 m'ss\" 转为 sec/km，非法返回 None"""
+    if not pace_str or pace_str.startswith("--"):
+        return None
+    try:
+        parts = pace_str.replace('"', '').split("'")
+        if len(parts) != 2:
+            return None
+        minutes = int(parts[0])
+        seconds = int(parts[1])
+        if minutes < 0 or seconds < 0 or seconds >= 60:
+            return None
+        return minutes * 60 + seconds
+    except Exception:
+        return None
+
+
+def _is_valid_running_pace(pace_min_per_km):
+    """按运行配速范围判断是否为有效值。"""
+    if pace_min_per_km is None:
+        return False
+    try:
+        pace_min_per_km = float(pace_min_per_km)
+    except (TypeError, ValueError):
+        return False
+    return PACE_VALID_MIN_MIN_PER_KM <= pace_min_per_km <= PACE_VALID_MAX_MIN_PER_KM
+
+
+def _reset_sport_gnss_state(now=None):
+    """重置运动会话的 GNSS 轨迹状态。"""
+    global sport_gnss_track, sport_gnss_last_point, sport_gnss_last_track_ts
+    global sport_gnss_distance_km, sport_gnss_fix_samples, sport_gnss_total_samples
+    global sport_gnss_satellite_max, sport_gnss_latest_point, sport_gnss_last_step_count
+
+    if now is None:
+        now = time.time()
+
+    sport_gnss_track = []
+    sport_gnss_last_point = None
+    sport_gnss_last_track_ts = 0.0
+    sport_gnss_distance_km = 0.0
+    sport_gnss_fix_samples = 0
+    sport_gnss_total_samples = 0
+    sport_gnss_satellite_max = 0
+    sport_gnss_latest_point = None
+    sport_gnss_last_step_count = None
+
+
+def _should_use_gnss_distance():
+    """满足条件时优先使用 GNSS 距离。"""
+    return sport_gnss_distance_km > 0 and len(sport_gnss_track) >= 3
+
+
+def _update_gnss_track(sat_count=0, now=None):
+    """按秒更新一次 GNSS 轨迹点。"""
+    global sport_gnss_track, sport_gnss_last_point, sport_gnss_last_track_ts
+    global sport_gnss_distance_km, sport_gnss_fix_samples, sport_gnss_total_samples
+    global sport_gnss_satellite_max, sport_gnss_latest_point, sport_gnss_last_step_count
+    global sport_last_stride_m, sport_last_cadence_spm
+
+    if now is None:
+        now = time.time()
+
+    if not GNSS_AVAILABLE or not gnss_manager or not gnss_manager.is_active:
+        return
+
+    sat_count = int(sat_count or 0)
+    sport_gnss_total_samples += 1
+    sport_gnss_satellite_max = max(sport_gnss_satellite_max, sat_count)
+
+    if not gnss_manager.has_valid_fix(sat_count):
+        return
+
+    sport_gnss_fix_samples += 1
+    if sport_gnss_last_track_ts and (now - sport_gnss_last_track_ts) < GNSS_TRACK_INTERVAL:
+        return
+
+    point = gnss_manager.get_track_point(sat_count=sat_count)
+    if not point:
+        return
+
+    point['t'] = int(now - sport_start_time) if sport_start_time else int(sport_duration)
+
+    if sport_gnss_last_point is None:
+        point['distance_km'] = 0.0
+        point['step_count'] = step_count
+        sport_gnss_track.append(point)
+        sport_gnss_last_point = point
+        sport_gnss_last_track_ts = now
+        sport_gnss_last_step_count = step_count
+        sport_gnss_latest_point = point
+        return
+
+    delta_km = gnss_manager.haversine_distance_km(
+        sport_gnss_last_point.get('lat'),
+        sport_gnss_last_point.get('lon'),
+        point.get('lat'),
+        point.get('lon'),
+    )
+    delta_m = delta_km * 1000.0
+
+    if delta_m <= 0:
+        return
+
+    min_move_distance_m = float(GNSS_RUNTIME_CONFIG.get('min_move_distance_m', 0.8))
+    max_jump_distance_m = float(GNSS_RUNTIME_CONFIG.get('max_jump_distance_m', 35.0))
+    max_jump_speed_kmh = float(GNSS_RUNTIME_CONFIG.get('max_jump_speed_kmh', 25.0))
+
+    elapsed = max(now - sport_gnss_last_track_ts, 1e-6)
+    estimated_speed_kmh = (delta_km / elapsed) * 3600.0
+    point_speed_kmh = point.get('speed_kmh')
+
+    if delta_m < min_move_distance_m:
+        return
+    if delta_m > max_jump_distance_m:
+        return
+    if point_speed_kmh is not None and point_speed_kmh > max_jump_speed_kmh:
+        return
+    if estimated_speed_kmh > max_jump_speed_kmh:
+        return
+
+    sport_gnss_distance_km += delta_km
+    point['distance_km'] = round(sport_gnss_distance_km, 3)
+
+    delta_steps = max(0, step_count - int(sport_gnss_last_step_count or 0))
+    if delta_steps > 0:
+        cadence_spm = round((delta_steps / elapsed) * 60.0, 1)
+        stride_m = delta_m / delta_steps
+        if 0.2 <= stride_m <= 2.5:
+            point['stride_m'] = round(stride_m, 2)
+            point['cadence_spm'] = cadence_spm
+            sport_last_stride_m = point['stride_m']
+            sport_last_cadence_spm = cadence_spm
+
+    point['step_count'] = step_count
+    sport_gnss_track.append(point)
+    sport_gnss_last_point = point
+    sport_gnss_last_track_ts = now
+    sport_gnss_last_step_count = step_count
+    sport_gnss_latest_point = point
+
+
+def _reset_sport_series(now=None):
+    """开始新的运动会话时，重置曲线与累计距离。"""
+    global sport_series, sport_series_last_ts, sport_series_last_step, sport_series_last_point_ts
+    global sport_session_distance_km, sport_last_stride_m, sport_last_cadence_spm
+
+    if now is None:
+        now = time.time()
+
+    sport_series = []
+    sport_series_last_ts = now
+    sport_series_last_step = step_count
+    sport_series_last_point_ts = 0.0
+    sport_session_distance_km = 0.0
+    sport_last_stride_m = config.STEP_LENGTH_NORMAL
+    sport_last_cadence_spm = 0.0
+    _reset_sport_gnss_state(now)
+
+
+def _update_sport_series(now=None, force_point=False):
+    """更新运动曲线与累计距离（低频采样）。"""
+    global sport_series_last_ts, sport_series_last_step, sport_series_last_point_ts
+    global sport_session_distance_km, sport_last_stride_m, sport_last_cadence_spm
+
+    if now is None:
+        now = time.time()
+
+    if sport_series_last_ts is None:
+        sport_series_last_ts = now
+        sport_series_last_step = step_count
+        sport_series_last_point_ts = 0.0
+        return
+
+    dt = now - sport_series_last_ts
+    ds = step_count - sport_series_last_step
+    if ds < 0:
+        ds = step_count
+
+    step_stride_m = None
+    if dt > 0 and ds > 0:
+        steps_per_second = ds / dt
+        sport_last_cadence_spm = round(steps_per_second * 60, 1)
+        step_stride_m = get_step_length_by_frequency(steps_per_second)
+        sport_session_distance_km += (ds * step_stride_m) / 1000
+
+    if sport_gnss_latest_point and sport_gnss_latest_point.get('stride_m') is not None:
+        sport_last_stride_m = sport_gnss_latest_point.get('stride_m')
+        if sport_gnss_latest_point.get('cadence_spm') is not None:
+            sport_last_cadence_spm = sport_gnss_latest_point.get('cadence_spm')
+    elif step_stride_m is not None:
+        sport_last_stride_m = step_stride_m
+
+    sport_series_last_ts = now
+    sport_series_last_step = step_count
+
+    if not force_point and (now - sport_series_last_point_ts) < SPORT_SERIES_INTERVAL:
+        return
+
+    session_steps = max(0, step_count - (sport_session_start_step or 0))
+    carbon_g = round(session_steps * config.CARBON_PER_STEP, 2)
+    pace_sec_per_km = _pace_str_to_sec_per_km(current_pace_str)
+    t = int(now - sport_start_time) if sport_start_time else int(sport_duration)
+
+    distance_km = round(sport_session_distance_km, 3)
+    distance_source = 'step'
+    if _should_use_gnss_distance():
+        distance_km = round(sport_gnss_distance_km, 3)
+        distance_source = 'gnss'
+
+    point = {
+        "t": t,
+        "pace_sec_per_km": pace_sec_per_km,
+        "cadence_spm": sport_last_cadence_spm,
+        "stride_m": round(sport_last_stride_m, 2),
+        "carbon_reduce": carbon_g,
+        "distance_km": distance_km,
+        "distance_source": distance_source,
+    }
+
+    if sport_gnss_latest_point:
+        lat = sport_gnss_latest_point.get('lat')
+        lon = sport_gnss_latest_point.get('lon')
+        if lat is not None and lon is not None:
+            point['lat'] = lat
+            point['lon'] = lon
+        if sport_gnss_latest_point.get('satellites') is not None:
+            point['satellites'] = sport_gnss_latest_point.get('satellites')
+        if sport_gnss_latest_point.get('speed_kmh') is not None:
+            point['gnss_speed_kmh'] = sport_gnss_latest_point.get('speed_kmh')
+        if sport_gnss_latest_point.get('heading_deg') is not None:
+            point['heading_deg'] = sport_gnss_latest_point.get('heading_deg')
+        point['gnss_distance_km'] = round(sport_gnss_distance_km, 3)
+
+    sport_series.append(point)
+    sport_series_last_point_ts = now
+
+
 def update_sport_time():
     """更新运动时长"""
-    global sport_start_time, sport_time_today, sport_duration, last_update_time
+    global sport_start_time, sport_time_today, sport_duration, last_update_time, sport_session_start_step
 
     if current_mode == MODE_SPORT:
         if sport_start_time is None:
             sport_start_time = time.time()
             last_update_time = time.time()
             sport_duration = 0
+            sport_session_start_step = step_count
+            _reset_sport_series(sport_start_time)
         else:
             now = time.time()
             elapsed = int(now - last_update_time)
@@ -1319,10 +1493,15 @@ def update_sport_time():
 
 def record_sport_session():
     """记录运动会话"""
-    global sport_duration, sport_pace_total_distance, sport_pace_total_time
+    global sport_duration, sport_pace_total_distance, sport_pace_total_time, sport_session_start_step
+    global sport_session_distance_km, sport_series
+    global sport_gnss_track, sport_gnss_distance_km, sport_gnss_fix_samples
+    global sport_gnss_total_samples, sport_gnss_satellite_max
 
     if sport_duration > 30:
         try:
+            _update_sport_series(force_point=True)
+
             # 计算平均配速：总距离/总时间
             if sport_pace_total_time > 0 and sport_pace_total_distance > 0:
                 # 配速 = 时间(分钟) / 距离(公里)
@@ -1334,15 +1513,49 @@ def record_sport_session():
             else:
                 pace = "--'--\""
 
-            # calculate_step_and_carbon returns dict but we use global step_count/carbon_reduce_count
-            calculate_step_and_carbon(step_count)
+            session_step_count = max(0, step_count - (sport_session_start_step or 0))
+            session_carbon_reduce = round(session_step_count * config.CARBON_PER_STEP, 2)
+
+            step_distance_km = float(sport_session_distance_km or 0.0)
+            gnss_distance_km = float(sport_gnss_distance_km or 0.0)
+            session_distance_km = step_distance_km
+            distance_source = 'step'
+            if _should_use_gnss_distance():
+                session_distance_km = gnss_distance_km
+                distance_source = 'gnss'
+
+            gnss_valid_ratio = round(
+                sport_gnss_fix_samples / sport_gnss_total_samples, 3
+            ) if sport_gnss_total_samples > 0 else 0.0
+            avg_cadence_spm = round((session_step_count / sport_duration) * 60, 1) if sport_duration > 0 else 0.0
+            if session_step_count > 0:
+                if session_distance_km <= 0:
+                    steps_per_second = session_step_count / max(1, sport_duration)
+                    stride_m = get_step_length_by_frequency(steps_per_second)
+                    session_distance_km = (session_step_count * stride_m) / 1000
+                avg_stride_m = round((session_distance_km * 1000) / session_step_count, 2)
+            else:
+                avg_stride_m = 0.0
+
             record = {
                 "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "mode": "运动" if current_mode == MODE_SPORT else "会议",
+                "mode": "运动",
                 "duration": sport_duration,
                 "pace": pace,
-                "step": step_count,
-                "carbon_reduce": carbon_reduce_count
+                "step": session_step_count,
+                "carbon_reduce": session_carbon_reduce,
+                "distance_km": round(session_distance_km, 3),
+                "distance_step_km": round(step_distance_km, 3),
+                "distance_gnss_km": round(gnss_distance_km, 3),
+                "distance_source": distance_source,
+                "avg_stride_m": avg_stride_m,
+                "avg_cadence_spm": avg_cadence_spm,
+                "series": [dict(point) for point in sport_series],
+                "gnss_track": [dict(point) for point in sport_gnss_track],
+                "gnss_valid_ratio": gnss_valid_ratio,
+                "gnss_fix_samples": sport_gnss_fix_samples,
+                "gnss_total_samples": sport_gnss_total_samples,
+                "gnss_satellite_max": sport_gnss_satellite_max,
             }
             try:
                 response = requests.post(f"{SERVER_URL}/api/sport_records",
@@ -1352,12 +1565,15 @@ def record_sport_session():
             except Exception as upload_err:
                 logger.warning(f"运动记录上传失败: {upload_err}")
                 # 上传失败，保存到本地pending_data
-                offline_manager.pending_data.append(record)
-                offline_manager._save_pending()
+                offline_manager.append_pending_record(record)
                 logger.info(f"运动记录已保存到本地: {record}")
         except Exception as e:
             logger.error(f"记录运动失败: {e}")
     sport_duration = 0
+    sport_session_start_step = step_count
+    sport_series = []
+    sport_session_distance_km = 0.0
+    _reset_sport_gnss_state()
 
 
 def update_sitting_duration():
@@ -1389,6 +1605,17 @@ def update_activity_hours():
 def reset_daily_stats():
     """每日重置统计数据"""
     global sport_time_today, activity_hours
+    global step_count, carbon_reduce_count
+    global step_pace_start_time, step_pace_last_step
+    global step_pace_accumulated_distance, step_pace_accumulated_time
+    global sport_pace_total_distance, sport_pace_total_time, sport_pace_start_time
+    global current_pace_str, last_valid_pace_str, has_valid_pace
+    global sport_session_start_step
+    global sport_series, sport_series_last_ts, sport_series_last_step, sport_series_last_point_ts
+    global sport_session_distance_km, sport_last_stride_m, sport_last_cadence_spm
+    global sport_gnss_track, sport_gnss_last_point, sport_gnss_last_track_ts
+    global sport_gnss_distance_km, sport_gnss_fix_samples, sport_gnss_total_samples
+    global sport_gnss_satellite_max, sport_gnss_latest_point
     last_date = datetime.now().date()
 
     while running:
@@ -1397,6 +1624,43 @@ def reset_daily_stats():
         if current_date != last_date:
             sport_time_today = 0
             activity_hours = set()
+            step_count = 0
+            carbon_reduce_count = 0
+            sport_session_start_step = 0
+
+            # 跨天后重置步数/配速相关计数，避免出现负增量或显示异常
+            step_pace_start_time = None
+            step_pace_last_step = 0
+            step_pace_accumulated_distance = 0.0
+            step_pace_accumulated_time = 0.0
+            sport_pace_total_distance = 0.0
+            sport_pace_total_time = 0.0
+            sport_pace_start_time = None
+            current_pace_str = "--'--\""
+            last_valid_pace_str = "--'--\""
+            has_valid_pace = False
+            sport_series = []
+            sport_series_last_ts = None
+            sport_series_last_step = 0
+            sport_series_last_point_ts = 0.0
+            sport_session_distance_km = 0.0
+            sport_last_stride_m = config.STEP_LENGTH_NORMAL
+            sport_last_cadence_spm = 0.0
+            sport_gnss_track = []
+            sport_gnss_last_point = None
+            sport_gnss_last_track_ts = 0.0
+            sport_gnss_distance_km = 0.0
+            sport_gnss_fix_samples = 0
+            sport_gnss_total_samples = 0
+            sport_gnss_satellite_max = 0
+            sport_gnss_latest_point = None
+
+            if step_detector:
+                try:
+                    step_detector.set_count(0)
+                except Exception as e:
+                    logger.warning(f"步数重置失败: {e}")
+
             last_date = current_date
             logger.info("已重置今日统计数据")
 
@@ -1528,12 +1792,23 @@ def handle_life_mode():
 
     update_activity_hours()
 
+    if detect_fall() and not fall_detected:
+        trigger_fall_alarm()
+
 
 def gnss_search_thread_func():
     """GNSS搜星线程（30秒搜星）"""
-    global gnss_valid, gnss_searching
+    global gnss_valid, gnss_searching, gnss_next_search_time
+    global gnss_search_disabled_for_session, gnss_last_health_check_time
 
     if not GNSS_AVAILABLE:
+        gnss_searching = False
+        logger.warning("GNSS搜星线程未启动：驱动不可用")
+        return
+
+    if not gnss_manager.is_active:
+        gnss_searching = False
+        logger.warning("GNSS搜星线程未启动：GNSS尚未成功启动")
         return
 
     gnss_searching = True
@@ -1541,46 +1816,52 @@ def gnss_search_thread_func():
     logger.info("开始30秒GNSS搜星...")
 
     while running and gnss_searching and current_mode == MODE_SPORT:
-        elapsed = time.time() - gnss_search_start
-        if elapsed >= 30:
-            # 30秒搜星失败
-            logger.info("GNSS搜星超时（30秒），卫星信号弱")
-            add_voice("您当前可能处于室内，卫星信号弱，卫星定位暂不可用")
-            gnss_searching = False
-            break
-
         sat_count = gnss_manager.get_satellite_count()
-        logger.info(f"GNSS搜星中: {sat_count}颗")
+        gnss_valid = gnss_manager.has_valid_fix(sat_count)
+        logger.debug(f"GNSS搜星中: {sat_count}颗")
 
-        if sat_count > 4:
-            gnss_valid = True
-            gnss_searching = False
+        if gnss_valid:
+            gnss_last_health_check_time = time.time()
             logger.info(f"GNSS搜星成功: {sat_count}颗")
             break
 
-        # 每秒检查一次
+        if (time.time() - gnss_search_start) >= 30:
+            gnss_valid = False
+            gnss_search_disabled_for_session = True
+            gnss_last_health_check_time = time.time()
+            logger.info("GNSS搜星超时（30秒），本次运动模式不再重新搜星")
+            add_voice("您当前可能处于室内，卫星信号弱，本次运动将不再尝试卫星搜星")
+            break
+
         time.sleep(1)
 
     gnss_searching = False
-
 
 def handle_sport_mode():
     """运动模式"""
     global fall_detected, emergency_mode, step_count, carbon_reduce_count, current_pace_str
     global gps_speed_read_time, gps_current_speed, step_pace_start_time, step_pace_last_step
-    global gnss_searching, gnss_search_thread
+    global gnss_searching, gnss_search_thread, gnss_next_search_time
+    global gnss_initial_search_done, gnss_search_disabled_for_session, gnss_last_health_check_time
     global last_valid_pace_str, has_valid_pace
     global sport_pace_total_distance, sport_pace_total_time, sport_pace_start_time
+    global gnss_last_check_time, gnss_valid
 
     if message_showing:
         return
 
-    # 启动GNSS（用于速度获取）
-    if not gnss_manager.is_active:
-        gnss_manager.start()
+    update_sport_time()
 
-    # 启动30秒搜星线程（如果不正在搜星）
-    if not gnss_searching:
+    # 启动GNSS（用于速度获取）
+    gnss_started = gnss_manager.is_active
+    if not gnss_started:
+        gnss_started = gnss_manager.start()
+        if gnss_started:
+            gnss_last_check_time = None
+
+    # 进入运动模式后只启动一次首次30秒搜星
+    if gnss_started and not gnss_initial_search_done and not gnss_search_disabled_for_session and (gnss_search_thread is None or not gnss_search_thread.is_alive()):
+        gnss_initial_search_done = True
         gnss_searching = True
         gnss_search_thread = threading.Thread(target=gnss_search_thread_func, daemon=True)
         gnss_search_thread.start()
@@ -1590,7 +1871,39 @@ def handle_sport_mode():
 
     detect_movement()
 
+    sat_count = 0
+    gnss_sample_refreshed = False
+    if GNSS_AVAILABLE:
+        current_gnss_time = time.time()
+        if gnss_last_check_time is None or (current_gnss_time - gnss_last_check_time) >= 1:
+            sat_count = gnss_manager.get_satellite_count()
+            gnss_valid = gnss_manager.has_valid_fix(sat_count)
+            gnss_last_check_time = current_gnss_time
+            gnss_sample_refreshed = True
+        else:
+            sat_count = gnss_manager.last_satellite_count
+            gnss_valid = gnss_manager.has_valid_fix(sat_count)
+
+        if gnss_sample_refreshed:
+            _update_gnss_track(sat_count=sat_count, now=gnss_last_check_time)
+
+        # 首次搜星成功后，运动模式下每5秒检查一次卫星数量，低于阈值则重新搜星
+        if gnss_started and gnss_initial_search_done and not gnss_searching and not gnss_search_disabled_for_session:
+            health_check_now = time.time()
+            if gnss_last_health_check_time is None or (health_check_now - gnss_last_health_check_time) >= GNSS_HEALTH_CHECK_INTERVAL_SEC:
+                gnss_last_health_check_time = health_check_now
+                if not gnss_manager.is_fix_satellite_count(sat_count):
+                    logger.info(f"GNSS卫星数不足（{sat_count}颗），重新开始30秒搜星")
+                    gnss_searching = True
+                    gnss_search_thread = threading.Thread(target=gnss_search_thread_func, daemon=True)
+                    gnss_search_thread.start()
+
+    if 'gps_status_text' in ui_elements:
+        gps_text = gnss_manager.get_status_text(sat_count) if GNSS_AVAILABLE else "GPS:--"
+        ui_elements['gps_status_text'].config(text=gps_text)
+
     # 读取加速度数据用于调试记录
+    fall_detected_now = False
     try:
         ax, ay, az = read_acceleration()
         if ax is not None:
@@ -1607,6 +1920,7 @@ def handle_sport_mode():
             is_fall, fall_state = False, {}
             if fall_detector:
                 is_fall, fall_state = fall_detector.check(ax, ay, az)
+                fall_detected_now = is_fall
             pitch, roll = 0, 0
             if attitude_calculator:
                 pitch, roll = attitude_calculator.update(ax, ay, az)
@@ -1623,26 +1937,24 @@ def handle_sport_mode():
 
     # === 配速计算（GNSS优先，步数备用）===
     current_time = time.time()
-    PACE_MIN_DISTANCE = 0.0625  # 最小有效距离(km)，对应配速8'00"/km
 
-    # GNSS有效时，每10秒读取速度并计算配速
+    # GNSS有效时，每5秒读取速度并按 m/s 直接换算配速
     if gnss_valid:
         if gps_speed_read_time is None:
             gps_speed_read_time = current_time
 
         elapsed = current_time - gps_speed_read_time
-        if elapsed >= 10:
+        if elapsed >= GNSS_PACE_INTERVAL_SEC:
             gps_current_speed = gnss_manager.get_speed()  # km/h
             gps_speed_read_time = current_time
-            logger.info(f"GNSS速度读取: {gps_current_speed} km/h")
+            logger.debug(f"GNSS速度读取: {gps_current_speed} km/h")
 
             if gps_current_speed is not None and gps_current_speed > 0:
-                pace = 60 / gps_current_speed  # 配速(分钟/公里)
-                # 计算10秒内行驶的距离
-                distance_km = gps_current_speed * (elapsed / 3600)
+                speed_mps = gps_current_speed / 3.6
+                pace = 1000 / (speed_mps * 60)  # 配速(分钟/公里)
+                distance_km = (speed_mps * elapsed) / 1000.0
 
-                # 检查有效值：距离 >= 0.0625km 且配速在3-30之间
-                if distance_km >= PACE_MIN_DISTANCE and 3 <= pace <= 30:
+                if speed_mps > 0 and _is_valid_running_pace(pace):
                     minutes = int(pace)
                     seconds = int((pace - minutes) * 60)
                     current_pace_str = f"{minutes}'{seconds:02d}\""
@@ -1653,15 +1965,15 @@ def handle_sport_mode():
                     sport_pace_total_time += elapsed
                     if sport_pace_start_time is None:
                         sport_pace_start_time = current_time - elapsed
-                    logger.info(f"GNSS配速有效: {current_pace_str}")
+                    logger.debug(f"GNSS配速有效: {current_pace_str}")
                 else:
-                    # 距离无效，使用最近有效值或默认值
+                    # 配速无效，使用最近有效值或默认值
                     current_pace_str = last_valid_pace_str if has_valid_pace else "--'--\""
-                    logger.info(f"GNSS配速无效（距离不足）")
+                    logger.debug(f"GNSS配速无效（超出有效范围 {PACE_VALID_MIN_MIN_PER_KM:.0f}'00\"~{PACE_VALID_MAX_MIN_PER_KM:.0f}'00\"）")
             else:
                 # GNSS速度无效，使用最近有效值或默认值
                 current_pace_str = last_valid_pace_str if has_valid_pace else "--'--\""
-                logger.info(f"GNSS速度无效")
+                logger.debug("GNSS速度无效")
     else:
         # GNSS无效，使用步数计算配速（每30秒）
         # 逻辑：若总步数为0，不计时；第一次步数增加时开始计时30s；30s内步数为0则停止
@@ -1671,7 +1983,7 @@ def handle_sport_mode():
             step_pace_start_time = None
             step_pace_last_step = step_count
             current_pace_str = "--'--\""
-            logger.info(f"步数配速: 步数为0，不计时")
+            logger.debug("步数配速: 步数为0，不计时")
         else:
             # 有步数的情况
             if step_pace_start_time is None:
@@ -1693,10 +2005,9 @@ def handle_sport_mode():
                         step_length = get_step_length_by_frequency(steps_per_second)
                         distance_km = steps_in_period * step_length / 1000
                         duration_min = step_elapsed / 60
+                        pace = duration_min / distance_km if distance_km > 0 else None
 
-                        # 检查有效值：距离 >= 0.0625km 且配速在3-30之间
-                        if distance_km >= PACE_MIN_DISTANCE and 3 <= duration_min / distance_km <= 30:
-                            pace = duration_min / distance_km
+                        if _is_valid_running_pace(pace):
                             minutes = int(pace)
                             seconds = int((pace - minutes) * 60)
                             current_pace_str = f"{minutes}'{seconds:02d}\""
@@ -1709,18 +2020,18 @@ def handle_sport_mode():
                                 sport_pace_start_time = step_pace_start_time
                             logger.info(f"步数配速有效: {current_pace_str}")
                         else:
-                            # 距离无效，使用最近有效值或默认值
+                            # 配速无效，使用最近有效值或默认值
                             current_pace_str = last_valid_pace_str if has_valid_pace else "--'--\""
-                            logger.info(f"步数配速无效（距离不足）")
+                            logger.debug(f"步数配速无效（超出有效范围 {PACE_VALID_MIN_MIN_PER_KM:.0f}'00\"~{PACE_VALID_MAX_MIN_PER_KM:.0f}'00\"）")
                     else:
                         # 步数不足10步，使用最近有效值或默认值
                         current_pace_str = last_valid_pace_str if has_valid_pace else "--'--\""
-                        logger.info(f"步数配速无效（步数不足10步）")
+                        logger.debug("步数配速无效（步数不足10步）")
 
                     # 重置计时
                     step_pace_start_time = current_time
                     step_pace_last_step = step_count
-                    logger.info(f"步数配速计算: {steps_in_period}步/{step_elapsed:.0f}秒 = {current_pace_str}")
+                    logger.debug(f"步数配速计算: {steps_in_period}步/{step_elapsed:.0f}秒 = {current_pace_str}")
                 else:
                     # 30秒未到，检查是否有步数增加（停止条件：30s内步数为0）
                     if steps_in_period == 0:
@@ -1732,6 +2043,8 @@ def handle_sport_mode():
                     else:
                         # 仍在计时中，继续显示默认值或最近有效值
                         current_pace_str = last_valid_pace_str if has_valid_pace else "--'--\""
+
+    _update_sport_series(current_time)
 
     # 显示配速
     if 'pace_text' in ui_elements:
@@ -1754,14 +2067,8 @@ def handle_sport_mode():
         ui_elements['carbon_reduce_text'].config(text=carbon_str)
 
     # 跌倒检测
-    if detect_fall() and not fall_detected:
-        logger.warning("检测到摔倒！")
-        fall_detected = True
-        stop_all_voice()
-        add_voice("检测到摔倒，是否需要帮助？长按取消警报")
-        threading.Thread(target=emergency_countdown, daemon=True).start()
-
-    update_sport_time()
+    if fall_detected_now and not fall_detected:
+        trigger_fall_alarm()
 
 
 def handle_meeting_mode():
@@ -1969,164 +2276,7 @@ def knob_thread():
 
 
 # ==================== 离线数据管理器 ====================
-class OfflineManager:
-    """离线数据管理器"""
-
-    CACHE_DIR = "/root/.anklet"
-    CACHE_FILE = "cache.json"
-    PENDING_FILE = "pending.json"
-    DEVICE_FILE = "device_id.json"
-
-    def __init__(self):
-        # 开机默认离线模式
-        self.is_online = False
-        self.pending_data = []
-        self.cache_data = {}
-        self.device_id = self._get_or_create_device_id()
-
-        try:
-            os.makedirs(self.CACHE_DIR, exist_ok=True)
-        except:
-            pass
-
-        self._load_cache()
-        self._load_pending()
-
-    def _get_or_create_device_id(self):
-        try:
-            if os.path.exists(self.DEVICE_FILE):
-                with open(self.DEVICE_FILE, 'r') as f:
-                    return f.read().strip()
-            else:
-                import uuid
-                device_id = str(uuid.uuid4())
-                with open(self.DEVICE_FILE, 'w') as f:
-                    f.write(device_id)
-                return device_id
-        except:
-            return "unknown"
-
-    def _load_cache(self):
-        try:
-            cache_path = os.path.join(self.CACHE_DIR, self.CACHE_FILE)
-            if os.path.exists(cache_path):
-                with open(cache_path, 'r') as f:
-                    self.cache_data = json.load(f)
-        except:
-            self.cache_data = {}
-
-    def _load_pending(self):
-        try:
-            pending_path = os.path.join(self.CACHE_DIR, self.PENDING_FILE)
-            if os.path.exists(pending_path):
-                with open(pending_path, 'r') as f:
-                    self.pending_data = json.load(f) or []
-        except:
-            self.pending_data = []
-
-    def _save_cache(self):
-        try:
-            cache_path = os.path.join(self.CACHE_DIR, self.CACHE_FILE)
-            with open(cache_path, 'w') as f:
-                json.dump(self.cache_data, f, ensure_ascii=False)
-        except:
-            pass
-
-    def _save_pending(self):
-        try:
-            pending_path = os.path.join(self.CACHE_DIR, self.PENDING_FILE)
-            with open(pending_path, 'w') as f:
-                json.dump(self.pending_data, f, ensure_ascii=False)
-        except:
-            pass
-
-    def update_cache(self, data):
-        today = datetime.now().strftime("%Y-%m-%d")
-
-        if today not in self.cache_data:
-            self.cache_data[today] = {
-                "steps": 0,
-                "carbon": 0,
-                "duration": 0,
-                "last_update": None
-            }
-
-        current_steps = data.get("step", 0)
-        last_steps = self.cache_data[today].get("steps", 0)
-
-        if current_steps >= last_steps:
-            self.cache_data[today]["steps"] = current_steps
-            self.cache_data[today]["carbon"] = data.get("carbon_reduce", 0)
-            self.cache_data[today]["duration"] = data.get("sport_time_today", 0)
-            self.cache_data[today]["last_update"] = datetime.now().isoformat()
-
-        self._save_cache()
-
-    def set_online_status(self, is_online):
-        """设置在线状态"""
-        was_offline = not self.is_online
-        self.is_online = is_online
-        if was_offline and is_online:
-            logger.info("已切换到在线模式")
-        elif was_offline and not is_online:
-            # 保持在离线状态，不打印（避免频繁打印）
-            pass
-        elif not was_offline and not is_online:
-            # 从在线切换到离线
-            logger.info("已切换到离线模式")
-
-    def try_connect(self):
-        """尝试连接服务器，返回是否成功（无重试）"""
-        try:
-            # 创建禁用重试的session
-            from requests.adapters import HTTPAdapter
-            from urllib3.util.retry import Retry
-
-            session = requests.Session()
-            retry = Retry(total=0, connect=0, read=0, redirect=0)
-            adapter = HTTPAdapter(max_retries=retry)
-            session.mount('http://', adapter)
-            session.mount('https://', adapter)
-
-            # 发送请求
-            response = session.get(
-                f"{SERVER_URL}/api/status",
-                timeout=3
-            )
-            if response.status_code == 200:
-                return True
-        except Exception:
-            pass
-        return False
-
-    def sync_all_pending(self):
-        """一次性同步所有pending数据"""
-        if not self.is_online or not self.pending_data:
-            return 0
-
-        synced_count = 0
-
-        try:
-            # 使用批量同步API
-            response = requests.post(
-                f"{SERVER_URL}/api/sync_records",
-                json={"records": self.pending_data},
-                timeout=10
-            )
-            if response.status_code == 200:
-                result = response.json()
-                synced_count = result.get("synced_count", 0)
-                # 删除已同步的数据
-                self.pending_data = []
-                self._save_pending()
-                logger.info(f"批量同步成功: {synced_count} 条记录")
-        except Exception as e:
-            logger.warning(f"批量同步失败: {e}")
-
-        return synced_count
-
-
-offline_manager = OfflineManager()
+offline_manager = OfflineManager(SERVER_URL)
 
 
 # ==================== HTTP通信 ====================
@@ -2209,9 +2359,17 @@ def change_mode_internal(new_mode):
     """内部模式切换"""
     global current_mode, current_pace_str
     global gps_speed_read_time, gps_current_speed, step_pace_start_time, step_pace_last_step
-    global gnss_searching
+    global gnss_searching, gnss_last_check_time, gnss_valid, gnss_next_search_time
+    global gnss_initial_search_done, gnss_search_disabled_for_session, gnss_last_health_check_time
+    global last_valid_pace_str, has_valid_pace
+    global sport_pace_total_distance, sport_pace_total_time, sport_pace_start_time
+    global step_pace_accumulated_distance, step_pace_accumulated_time, sport_session_start_step
 
     if message_showing:
+        return
+
+    if not is_valid_mode(new_mode):
+        logger.warning(f"忽略非法模式切换请求: {new_mode}")
         return
 
     old_mode = current_mode
@@ -2234,6 +2392,12 @@ def change_mode_internal(new_mode):
         step_pace_accumulated_time = 0.0
         # 停止搜星
         gnss_searching = False
+        gnss_last_check_time = None
+        gnss_valid = False
+        gnss_next_search_time = 0.0
+        gnss_initial_search_done = False
+        gnss_search_disabled_for_session = False
+        gnss_last_health_check_time = None
         # 停止GNSS和呼吸灯
         gnss_manager.stop()
         stop_led_breathing()
@@ -2249,7 +2413,7 @@ def change_mode_internal(new_mode):
 
     # 切换到新模式后再播报语音
     logger.debug(f"[模式切换] 准备切换到新模式: {new_mode}, MODE_NAMES={MODE_NAMES[current_mode]}")
-    add_voice(f"切换到{MODE_NAMES[current_mode]}")
+    add_voice(f"切换到{MODE_NAMES[current_mode]}", force=(current_mode == MODE_MEETING))
     logger.debug(f"[模式切换] add_voice已调用, voice_queue={voice_queue}")
 
     if current_mode == MODE_MEETING:
@@ -2258,6 +2422,10 @@ def change_mode_internal(new_mode):
         enter_meeting_mode()
         logger.debug(f"[模式切换] enter_meeting_mode已调用")
     elif current_mode == MODE_SPORT:
+        gnss_next_search_time = 0.0
+        gnss_initial_search_done = False
+        gnss_search_disabled_for_session = False
+        gnss_last_health_check_time = None
         time.sleep(0.5)
         update_ui_mode()
         # 运动模式环境检查
@@ -2278,7 +2446,7 @@ def handle_command(cmd):
             exit_message_scroll()
 
         new_mode = cmd.get("mode", current_mode)
-        if 0 <= new_mode <= 3:
+        if is_valid_mode(new_mode):
             change_mode_internal(new_mode)
 
     elif command == "message":
@@ -2347,109 +2515,7 @@ def communication_thread():
 
 
 # ==================== GNSS速度管理器 ====================
-class GNSSManager:
-    """GNSS速度管理器 - 仅用于获取速度计算配速"""
-
-    def __init__(self, cfg=None):
-        default_cfg = {
-            "enabled": True,
-        }
-        if cfg:
-            default_cfg.update(cfg)
-        self.config = default_cfg
-
-        self.gnss = None
-        self.is_active = False
-
-    def initialize(self):
-        if not GNSS_AVAILABLE or not self.config["enabled"]:
-            return False
-
-        try:
-            self.gnss = DFRobot_GNSS_I2C(bus=0, addr=0x20)
-
-            if self.gnss.begin() == False:
-                logger.error("GNSS初始化失败")
-                return False
-
-            self.gnss.enable_power()
-            self.gnss.set_gnss(GPS_BeiDou_GLONASS)
-            logger.info("GNSS模块初始化成功")
-            return True
-
-        except Exception as e:
-            logger.warning(f"GNSS初始化异常: {e}")
-            return False
-
-    def start(self):
-        """启动GNSS"""
-        if not GNSS_AVAILABLE or not self.config["enabled"]:
-            return
-
-        if self.is_active:
-            return
-
-        self.is_active = True
-
-        if not self.initialize():
-            return
-
-        logger.info("GNSS已启动")
-
-    def stop(self):
-        """停止GNSS"""
-        self.is_active = False
-        if self.gnss:
-            try:
-                self.gnss.disable_power()
-            except:
-                pass
-
-    def get_speed(self):
-        """获取速度(km/h)，无效返回None"""
-        if not self.is_active or not self.gnss:
-            return None
-
-        try:
-            # 获取速度（km/h）
-            speed = self.gnss.get_speed()
-            if speed > 0:
-                return speed  # km/h
-        except:
-            pass
-        return None
-
-    def get_satellite_count(self):
-        """获取使用的卫星数量，无效返回0"""
-        if not self.is_active or not self.gnss:
-            return 0
-
-        try:
-            num = self.gnss.get_num_sta_used()
-            return num if num is not None else 0
-        except:
-            return 0
-
-    def get_datetime(self):
-        """获取GNSS时间，返回datetime对象或None"""
-        if not self.is_active or not self.gnss:
-            return None
-
-        try:
-            gnss_utc = self.gnss.get_date()
-            gnss_time = self.gnss.get_utc()
-            if gnss_utc and gnss_time:
-                from datetime import datetime
-                return datetime(
-                    gnss_utc.year, gnss_utc.month, gnss_utc.date,
-                    gnss_time.hour, gnss_time.minute, gnss_time.second
-                )
-        except:
-            pass
-        return None
-
-
-gnss_manager = GNSSManager()
+gnss_manager = GNSSManager(getattr(config, 'GNSS_CONFIG', None))
 
 
 # 主循环采样统计计数器
@@ -2471,8 +2537,8 @@ def main_loop():
                     _gnss_check_counter = 0
                     if GNSS_AVAILABLE:
                         sat_count = gnss_manager.get_satellite_count()
-                        gnss_valid = sat_count > 4
-                        logger.info(f"GNSS卫星检查: {sat_count}颗, 有效: {gnss_valid}")
+                        gnss_valid = gnss_manager.has_valid_fix(sat_count)
+                        logger.debug(f"GNSS卫星检查: {sat_count}颗, 有效: {gnss_valid}")
 
             # 会议模式不显示任何内容
             if not message_showing:
@@ -2563,6 +2629,8 @@ if __name__ == "__main__":
         logger.warning("运行在模拟模式")
 
     init_ui()
+
+    restore_today_stats_from_server()
 
     logger.info("硬件初始化完成")
     logger.info(f"sensors模块: {'已加载' if sensors_module_available else '未加载'}")

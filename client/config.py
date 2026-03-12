@@ -10,7 +10,7 @@ UPDATE_INTERVAL = 1
 
 # ==================== 日志配置 ====================
 LOG_CONFIG = {
-    'log_level': 'DEBUG',       # 日志级别: DEBUG, INFO, WARNING, ERROR
+    'log_level': 'DEBUG',        # 日志级别: DEBUG, INFO, WARNING, ERROR
     'log_dir': 'logs',          # 日志文件目录
     'log_to_file': True,        # 是否输出到文件
     'log_to_console': True,     # 是否输出到控制台
@@ -19,6 +19,18 @@ LOG_CONFIG = {
 # ==================== 调试配置 ====================
 DEBUG_ENABLED = False
 DEBUG_DIR = "debug_data"
+
+# ==================== 滚动文字参数 ====================
+MESSAGE_SCROLL_CONFIG = {
+    "text_x": 0,
+    "font_size": 129,
+    "scroll_speed": 74.0,
+    "frame_time": 0.033,
+    "start_offset_ratio": 0.9,
+    "initial_y_compensation": -240,
+    "tail_gap_ratio": 0.01,
+    "min_tail_gap": 1,
+}
 
 # ==================== 硬件引脚定义 ====================
 # 注意: 字符串格式，将在运行时转换为Pin对象
@@ -36,19 +48,34 @@ MODE_MEETING = 2
 # 模式切换顺序：生活->会议->运动->生活（长按2秒触发）
 MODE_CYCLE = [MODE_LIFE, MODE_MEETING, MODE_SPORT]
 
+# ==================== GNSS 配置 ====================
+GNSS_CONFIG = {
+    "enabled": True,
+    "min_satellites": 5,
+    "speed_unit": "knot",
+    "pace_speed_interval_sec": 5.0,
+    "pace_valid_min_min_per_km": 2.5,
+    "pace_valid_max_min_per_km": 8.0,
+    "track_interval": 1.0,
+    "min_move_distance_m": 0.8,
+    "max_jump_distance_m": 35.0,
+    "max_jump_speed_kmh": 25.0,
+    "search_retry_interval": 15.0,
+}
+
 # ==================== 步数检测器参数 ====================
 # 基于论文：《基于腰部MEMS加速度计的多阈值步数检测算法》作者：蒋博、付乐乐
 STEP_CONFIG = {
-    "t_max": 0.02,             # 波峰阈值 (g)
-    "t_min": -0.01,           # 波谷阈值 (g)
+    "t_max": 0.008,            # 波峰阈值 (g)
+    "t_min": -0.010,           # 波谷阈值 (g)
     "window_size": 3,          # 滑动窗口大小
 }
 
 # ==================== 重力去除器参数 ====================
 # 基于论文：《基于MEMS六轴传感器的上肢运动识别系统》作者：胡成全等
 GRAVITY_REMOVER_CONFIG = {
-    "filter_alpha": 0.47,      # 滤波系数 (0-1)，越小保留越多原始信号
-    "filter_window": 8,       # 滑动平均窗口大小
+    "filter_alpha": 0.52,      # 滤波系数 (0-1)，越小保留越多原始信号
+    "filter_window": 9,        # 滑动平均窗口大小
 }
 
 # ==================== 姿态检测器参数 ====================

@@ -9,12 +9,12 @@
 
 import csv
 import os
-import sys
 import math
 import argparse
 
-# 添加项目根目录到路径
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common import ensure_project_root
+
+ensure_project_root()
 
 # 导入配置文件
 import config

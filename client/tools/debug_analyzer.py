@@ -21,7 +21,9 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # 导入日志模块
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common import ensure_project_root
+
+ensure_project_root()
 from utils.logger import get_logger
 logger = get_logger('tools.debug_analyzer')
 

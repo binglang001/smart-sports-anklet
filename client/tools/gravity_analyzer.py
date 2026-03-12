@@ -11,33 +11,14 @@ import os
 import sys
 import math
 import argparse
-import platform
 
-# 添加项目根目录到路径
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common import ensure_project_root, setup_chinese_font
+
+ensure_project_root()
 
 # 导入日志模块
 from utils.logger import get_logger
 logger = get_logger('tools.gravity_analyzer')
-
-
-def setup_chinese_font():
-    """配置中文字体支持"""
-    import matplotlib
-    matplotlib.use('Agg')
-    import matplotlib.pyplot as plt
-
-    if platform.system() == 'Windows':
-        plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'SimSun', 'Arial']
-    elif platform.system() == 'Darwin':
-        plt.rcParams['font.sans-serif'] = ['PingFang SC', 'Hiragino Sans GB', 'Arial Unicode MS']
-    else:
-        plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'Noto Sans CJK SC', 'Droid Sans Fallback']
-
-    plt.rcParams['axes.unicode_minus'] = False
-    return plt
-
-
 class GravityAnalyzer:
     """重力去除分析器"""
 
@@ -386,7 +367,6 @@ def find_latest_data_file():
 
 def main():
     # 从config读取默认参数
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     try:
         import config
         default_alpha = config.GRAVITY_REMOVER_CONFIG.get("filter_alpha", 0.3)

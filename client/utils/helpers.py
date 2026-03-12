@@ -7,12 +7,14 @@
 
 import math
 
+import config
+
 
 # 运动统计参数
-CARBON_PER_STEP = 0.0014  # 公斤CO2/步
-STEP_LENGTH_SLOW = 0.5    # 米
-STEP_LENGTH_NORMAL = 0.65
-STEP_LENGTH_FAST = 0.8
+CARBON_PER_STEP = config.CARBON_PER_STEP  # 克/步
+STEP_LENGTH_SLOW = config.STEP_LENGTH_SLOW
+STEP_LENGTH_NORMAL = config.STEP_LENGTH_NORMAL
+STEP_LENGTH_FAST = config.STEP_LENGTH_FAST
 
 
 def calculate_pace(steps=None, duration_seconds=None):
@@ -67,8 +69,8 @@ def calculate_step_and_carbon(steps):
     distance_m = steps * STEP_LENGTH_NORMAL
     distance_km = distance_m / 1000
 
-    # 计算碳排放（公斤）
-    carbon_kg = steps * CARBON_PER_STEP
+    # 计算减碳（克）
+    carbon_kg = steps * CARBON_PER_STEP / 1000
 
     return {
         "steps": steps,

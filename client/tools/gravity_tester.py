@@ -10,8 +10,9 @@ import os
 import sys
 import math
 
-# 添加项目根目录到路径
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common import ensure_project_root
+
+ensure_project_root()
 
 # 导入日志模块
 from utils.logger import get_logger
@@ -223,7 +224,6 @@ def main():
     import argparse
 
     # 从config读取默认参数
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     try:
         import config
         default_alpha = config.GRAVITY_REMOVER_CONFIG.get("filter_alpha", 0.3)

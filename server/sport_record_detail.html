@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>运动记录详情 - 运动腰带控制系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #6b8e23 0%, #b8860b 100%);
+            color: #fff;
+            overflow-x: hidden;
+            padding-top: 54px;
+        }
+
+        .top-nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 54px;
+            background: rgba(0,0,0,0.35);
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 14px;
+            z-index: 100;
+            border-bottom: 1px solid rgba(255,255,255,0.12);
+        }
+
+        .nav-btn {
+            border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.12);
+            color: #fff;
+            padding: 8px 10px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .nav-title {
+            font-weight: 800;
+            font-size: 16px;
+            letter-spacing: 0.5px;
+        }
+
+        .container {
+            max-width: 980px;
+            margin: 0 auto;
+            padding: 16px;
+            display: grid;
+            gap: 14px;
+        }
+
+        .card {
+            background: rgba(0,0,0,0.22);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 14px;
+            padding: 14px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+        }
+
+        .card-title {
+            font-weight: 800;
+            font-size: 15px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 10px;
+        }
+
+        .row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .select {
+            border: 1px solid rgba(255,255,255,0.18);
+            background: rgba(0,0,0,0.18);
+            color: #fff;
+            padding: 10px 12px;
+            border-radius: 12px;
+            width: 100%;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .grid {
+            display: grid;
+            gap: 10px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            margin-top: 10px;
+        }
+
+        .stat {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.10);
+            border-radius: 12px;
+            padding: 10px 12px;
+        }
+
+        .stat-label { opacity: 0.8; font-size: 12px; margin-bottom: 6px; }
+        .stat-value { font-weight: 900; font-size: 18px; color: #00ff88; }
+        .stat-value.secondary { color: #2ecc71; }
+        .stat-value.muted { color: #ffffff; opacity: 0.92; }
+
+        .chart-wrap {
+            position: relative;
+            height: 300px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 14px;
+            padding: 10px;
+        }
+
+        .track-wrap {
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .track-svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .track-meta {
+            position: absolute;
+            left: 12px;
+            right: 12px;
+            bottom: 12px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            pointer-events: none;
+        }
+
+        .track-badge {
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(0,0,0,0.36);
+            border: 1px solid rgba(255,255,255,0.12);
+            color: rgba(255,255,255,0.92);
+            font-size: 12px;
+            backdrop-filter: blur(4px);
+        }
+
+        .hint {
+            opacity: 0.85;
+            font-size: 12px;
+        }
+
+        .empty {
+            padding: 18px 14px;
+            border: 1px dashed rgba(255,255,255,0.25);
+            border-radius: 14px;
+            background: rgba(0,0,0,0.18);
+            opacity: 0.9;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        @media (min-width: 760px) {
+            .grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+            .chart-wrap { height: 340px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="top-nav">
+        <button class="nav-btn" onclick="location.href='/'">← 返回主页</button>
+        <div class="nav-title">运动记录详情</div>
+        <button class="nav-btn" onclick="location.href='/history'">历史统计</button>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <div class="card-title">
+                <span>选择记录</span>
+                <span class="hint" id="recordHint">--</span>
+            </div>
+            <div class="row">
+                <select class="select" id="recordSelect"></select>
+            </div>
+
+            <div class="grid">
+                <div class="stat">
+                    <div class="stat-label">步数</div>
+                    <div class="stat-value" id="sSteps">--</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">时长</div>
+                    <div class="stat-value muted" id="sDuration">--</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">平均步频</div>
+                    <div class="stat-value" id="sCadence">--</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">平均步幅</div>
+                    <div class="stat-value muted" id="sStride">--</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">平均配速</div>
+                    <div class="stat-value muted" id="sPace">--</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">减碳</div>
+                    <div class="stat-value secondary" id="sCarbon">--</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">距离</div>
+                    <div class="stat-value muted" id="sDistance">--</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" id="emptyCard" style="display:none;">
+            <div class="card-title">
+                <span>曲线数据</span>
+                <span class="hint">该记录暂无曲线</span>
+            </div>
+            <div class="empty">
+                该记录缺少曲线数据（可能是旧版本上传的记录）。<br>
+                建议：更新客户端后重新进行一次运动记录上传。
+            </div>
+        </div>
+
+        <div class="card" id="chartsCard">
+            <div class="card-title">
+                <span>配速曲线</span>
+                <span class="hint">单位：分/公里（越低越快）</span>
+            </div>
+            <div class="chart-wrap"><canvas id="paceChart"></canvas></div>
+        </div>
+
+        <div class="card" id="chartsCard2">
+            <div class="card-title">
+                <span>步频 / 步幅</span>
+                <span class="hint">步频(步/分)，步幅(米)</span>
+            </div>
+            <div class="chart-wrap"><canvas id="cadenceStrideChart"></canvas></div>
+        </div>
+
+        <div class="card" id="chartsCard3">
+            <div class="card-title">
+                <span>减碳 / 距离</span>
+                <span class="hint">减碳(g)，距离(km)</span>
+            </div>
+            <div class="chart-wrap"><canvas id="carbonDistanceChart"></canvas></div>
+        </div>
+
+        <div class="card" id="trackCard" style="display:none;">
+            <div class="card-title">
+                <span>二维轨迹</span>
+                <span class="hint" id="trackHint">仅显示相对轨迹，不含地图底图</span>
+            </div>
+            <div class="chart-wrap track-wrap">
+                <svg id="trackSvg" class="track-svg" viewBox="0 0 1000 640" preserveAspectRatio="none" aria-label="二维轨迹"></svg>
+                <div class="track-meta" id="trackMeta"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SERVER_URL = window.location.origin;
+        const TRACK_VIEWBOX = { width: 1000, height: 640, padding: 72 };
+        let paceChart = null;
+        let cadenceStrideChart = null;
+        let carbonDistanceChart = null;
+
+        function toNumber(value, fallback = null) {
+            const num = Number(value);
+            return Number.isFinite(num) ? num : fallback;
+        }
+
+        function secToPaceStr(sec) {
+            const s = Number(sec);
+            if (!Number.isFinite(s) || s <= 0) return '--';
+            const minutes = Math.floor(s / 60);
+            const seconds = Math.floor(s % 60);
+            return `${minutes}'${String(seconds).padStart(2, '0')}"`;
+        }
+
+        function formatMinutes(seconds) {
+            const min = Math.floor((Number(seconds) || 0) / 60);
+            return `${min}分`;
+        }
+
+        function getQueryIndex() {
+            const url = new URL(window.location.href);
+            const index = url.searchParams.get('index');
+            return index !== null ? Number(index) : null;
+        }
+
+        function destroyChart(chart) {
+            if (chart) chart.destroy();
+        }
+
+        function formatRatio(value) {
+            const num = toNumber(value, null);
+            if (num === null) return '--';
+            return `${Math.round(num * 100)}%`;
+        }
+
+        function formatDistanceKm(value) {
+            const num = toNumber(value, null);
+            if (num === null) return '--';
+            return `${(Math.round(num * 1000) / 1000).toFixed(3)}km`;
+        }
+
+        function setSummary(record) {
+            const duration = toNumber(record.duration, 0);
+            const steps = toNumber(record.step, 0);
+            const carbon = toNumber(record.carbon_reduce, 0);
+            const distanceKm = toNumber(record.distance_km, 0);
+            const cadence = toNumber(record.avg_cadence_spm, null);
+            const stride = toNumber(record.avg_stride_m, null);
+            const pace = record.pace || "--'--\"";
+
+            document.getElementById('recordHint').textContent = record.time || '--';
+            document.getElementById('sSteps').textContent = steps.toLocaleString();
+            document.getElementById('sDuration').textContent = formatMinutes(duration);
+            document.getElementById('sCarbon').textContent = `${Math.round(carbon * 100) / 100}g`;
+            document.getElementById('sDistance').textContent = `${Math.round(distanceKm * 1000) / 1000}km`;
+            document.getElementById('sCadence').textContent = cadence !== null ? `${cadence} spm` : '--';
+            document.getElementById('sStride').textContent = stride !== null ? `${stride} m` : '--';
+            document.getElementById('sPace').textContent = pace;
+        }
+
+        function showEmptyState(isEmpty, hasCharts = true) {
+            document.getElementById('emptyCard').style.display = isEmpty ? '' : 'none';
+            document.getElementById('chartsCard').style.display = hasCharts ? '' : 'none';
+            document.getElementById('chartsCard2').style.display = hasCharts ? '' : 'none';
+            document.getElementById('chartsCard3').style.display = hasCharts ? '' : 'none';
+        }
+
+        function getTrackPoints(record, series) {
+            const normalizePoints = (points) => {
+                const result = [];
+                (Array.isArray(points) ? points : []).forEach((point, index) => {
+                    const lat = toNumber(point.lat, null);
+                    const lon = toNumber(point.lon, null);
+                    if (lat === null || lon === null) return;
+                    if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return;
+
+                    const prev = result[result.length - 1];
+                    if (prev && Math.abs(prev.lat - lat) < 1e-7 && Math.abs(prev.lon - lon) < 1e-7) {
+                        return;
+                    }
+
+                    result.push({
+                        lat,
+                        lon,
+                        t: toNumber(point.t, index),
+                    });
+                });
+                return result;
+            };
+
+            const gnssTrack = normalizePoints(record.gnss_track);
+            if (gnssTrack.length >= 2) {
+                return { points: gnssTrack, source: 'gnss' };
+            }
+
+            const seriesTrack = normalizePoints(series);
+            if (seriesTrack.length >= 2) {
+                return { points: seriesTrack, source: 'series' };
+            }
+
+            return { points: [], source: '' };
+        }
+
+        function renderTrack(record, series) {
+            const trackCard = document.getElementById('trackCard');
+            const trackSvg = document.getElementById('trackSvg');
+            const trackMeta = document.getElementById('trackMeta');
+            const trackHint = document.getElementById('trackHint');
+            const { points, source } = getTrackPoints(record, series);
+
+            if (points.length < 2) {
+                trackCard.style.display = 'none';
+                trackSvg.innerHTML = '';
+                trackMeta.innerHTML = '';
+                trackHint.textContent = '当前记录暂无可用轨迹';
+                return false;
+            }
+
+            trackCard.style.display = '';
+
+            const { width, height, padding } = TRACK_VIEWBOX;
+            const lats = points.map(point => point.lat);
+            const lons = points.map(point => point.lon);
+            let minLat = Math.min(...lats);
+            let maxLat = Math.max(...lats);
+            let minLon = Math.min(...lons);
+            let maxLon = Math.max(...lons);
+
+            if (Math.abs(maxLat - minLat) < 1e-7) {
+                minLat -= 0.0001;
+                maxLat += 0.0001;
+            }
+            if (Math.abs(maxLon - minLon) < 1e-7) {
+                minLon -= 0.0001;
+                maxLon += 0.0001;
+            }
+
+            const latSpan = maxLat - minLat;
+            const lonSpan = maxLon - minLon;
+            minLat -= latSpan * 0.08;
+            maxLat += latSpan * 0.08;
+            minLon -= lonSpan * 0.08;
+            maxLon += lonSpan * 0.08;
+
+            const usableWidth = width - padding * 2;
+            const usableHeight = height - padding * 2;
+            const project = (point) => ({
+                x: padding + ((point.lon - minLon) / (maxLon - minLon)) * usableWidth,
+                y: height - padding - ((point.lat - minLat) / (maxLat - minLat)) * usableHeight,
+            });
+
+            const projected = points.map(project);
+            const polyline = projected.map(point => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
+            const startPoint = projected[0];
+            const endPoint = projected[projected.length - 1];
+
+            const gridLines = [0.25, 0.5, 0.75].map((ratio) => {
+                const x = padding + usableWidth * ratio;
+                const y = padding + usableHeight * ratio;
+                return `
+                    <line x1="${x}" y1="${padding}" x2="${x}" y2="${height - padding}" stroke="rgba(255,255,255,0.08)" stroke-width="1" />
+                    <line x1="${padding}" y1="${y}" x2="${width - padding}" y2="${y}" stroke="rgba(255,255,255,0.08)" stroke-width="1" />
+                `;
+            }).join('');
+
+            trackSvg.innerHTML = `
+                <rect x="0" y="0" width="${width}" height="${height}" fill="rgba(255,255,255,0.03)"></rect>
+                <rect x="${padding}" y="${padding}" width="${usableWidth}" height="${usableHeight}" rx="18" ry="18" fill="rgba(0,0,0,0.18)" stroke="rgba(255,255,255,0.10)"></rect>
+                ${gridLines}
+                <polyline points="${polyline}" fill="none" stroke="#00ff88" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"></polyline>
+                <circle cx="${startPoint.x}" cy="${startPoint.y}" r="10" fill="#f5b041" stroke="#ffffff" stroke-width="3"></circle>
+                <circle cx="${endPoint.x}" cy="${endPoint.y}" r="10" fill="#2ecc71" stroke="#ffffff" stroke-width="3"></circle>
+                <text x="${Math.min(width - 120, startPoint.x + 14)}" y="${Math.max(28, startPoint.y - 14)}" fill="rgba(255,255,255,0.92)" font-size="24" font-weight="700">起点</text>
+                <text x="${Math.min(width - 120, endPoint.x + 14)}" y="${Math.max(28, endPoint.y - 14)}" fill="rgba(255,255,255,0.92)" font-size="24" font-weight="700">终点</text>
+            `;
+
+            const badges = [];
+            badges.push(`轨迹点 ${points.length}`);
+            badges.push(source === 'gnss' ? '来源 GNSS轨迹' : '来源 曲线坐标');
+
+            if (record.distance_gnss_km) {
+                badges.push(`GNSS距离 ${formatDistanceKm(record.distance_gnss_km)}`);
+            } else if (record.distance_km) {
+                badges.push(`总距离 ${formatDistanceKm(record.distance_km)}`);
+            }
+
+            if (record.gnss_valid_ratio !== undefined && record.gnss_valid_ratio !== null) {
+                badges.push(`有效率 ${formatRatio(record.gnss_valid_ratio)}`);
+            }
+
+            if (record.gnss_satellite_max) {
+                badges.push(`最大卫星 ${record.gnss_satellite_max}`);
+            }
+
+            trackMeta.innerHTML = badges.map(text => `<span class="track-badge">${text}</span>`).join('');
+            trackHint.textContent = source === 'gnss' ? '按经纬度投影为二维相对轨迹' : '当前使用曲线中的经纬度点绘制';
+            return true;
+        }
+
+        function renderCharts(series) {
+            const pacePoints = [];
+            const cadencePoints = [];
+            const stridePoints = [];
+            const carbonPoints = [];
+            const distancePoints = [];
+
+            series.forEach(p => {
+                const t = toNumber(p.t, null);
+                if (t === null) return;
+                const pace = toNumber(p.pace_sec_per_km, null);
+                const cadence = toNumber(p.cadence_spm, null);
+                const stride = toNumber(p.stride_m, null);
+                const carbon = toNumber(p.carbon_reduce, null);
+                const dist = toNumber(p.distance_km, null);
+
+                pacePoints.push({ x: t, y: pace });
+                cadencePoints.push({ x: t, y: cadence });
+                stridePoints.push({ x: t, y: stride });
+                carbonPoints.push({ x: t, y: carbon });
+                distancePoints.push({ x: t, y: dist });
+            });
+
+            destroyChart(paceChart);
+            destroyChart(cadenceStrideChart);
+            destroyChart(carbonDistanceChart);
+
+            paceChart = new Chart(document.getElementById('paceChart'), {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: '配速',
+                        data: pacePoints,
+                        borderColor: '#00ff88',
+                        backgroundColor: 'rgba(255,255,255,0.06)',
+                        borderWidth: 3,
+                        pointRadius: 0,
+                        tension: 0.35,
+                        spanGaps: true,
+                        fill: true,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => `配速: ${secToPaceStr(ctx.parsed.y)}`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            ticks: {
+                                color: 'rgba(255,255,255,0.85)',
+                                callback: (v) => `${Math.floor(v/60)}:${String(Math.floor(v%60)).padStart(2,'0')}`
+                            },
+                            grid: { color: 'rgba(255,255,255,0.08)' },
+                            title: { display: true, text: '时间(mm:ss)', color: 'rgba(255,255,255,0.85)' }
+                        },
+                        y: {
+                            ticks: {
+                                color: 'rgba(255,255,255,0.85)',
+                                callback: (v) => secToPaceStr(v)
+                            },
+                            grid: { color: 'rgba(255,255,255,0.08)' }
+                        }
+                    }
+                }
+            });
+
+            cadenceStrideChart = new Chart(document.getElementById('cadenceStrideChart'), {
+                type: 'line',
+                data: {
+                    datasets: [
+                        {
+                            label: '步频(spm)',
+                            data: cadencePoints,
+                            yAxisID: 'y',
+                            borderColor: '#00ccff',
+                            borderWidth: 3,
+                            pointRadius: 0,
+                            tension: 0.35,
+                            spanGaps: true,
+                        },
+                        {
+                            label: '步幅(m)',
+                            data: stridePoints,
+                            yAxisID: 'y1',
+                            borderColor: '#ffdd55',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            tension: 0.35,
+                            spanGaps: true,
+                        },
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { labels: { color: 'rgba(255,255,255,0.9)' } },
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            ticks: {
+                                color: 'rgba(255,255,255,0.85)',
+                                callback: (v) => `${Math.floor(v/60)}:${String(Math.floor(v%60)).padStart(2,'0')}`
+                            },
+                            grid: { color: 'rgba(255,255,255,0.08)' },
+                            title: { display: true, text: '时间(mm:ss)', color: 'rgba(255,255,255,0.85)' }
+                        },
+                        y: {
+                            position: 'left',
+                            ticks: { color: 'rgba(255,255,255,0.85)' },
+                            grid: { color: 'rgba(255,255,255,0.08)' }
+                        },
+                        y1: {
+                            position: 'right',
+                            ticks: { color: 'rgba(255,255,255,0.85)' },
+                            grid: { drawOnChartArea: false }
+                        }
+                    }
+                }
+            });
+
+            carbonDistanceChart = new Chart(document.getElementById('carbonDistanceChart'), {
+                type: 'line',
+                data: {
+                    datasets: [
+                        {
+                            label: '减碳(g)',
+                            data: carbonPoints,
+                            yAxisID: 'y',
+                            borderColor: '#2ecc71',
+                            borderWidth: 3,
+                            pointRadius: 0,
+                            tension: 0.35,
+                            spanGaps: true,
+                        },
+                        {
+                            label: '距离(km)',
+                            data: distancePoints,
+                            yAxisID: 'y1',
+                            borderColor: '#ffffff',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            tension: 0.35,
+                            spanGaps: true,
+                        },
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { labels: { color: 'rgba(255,255,255,0.9)' } },
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            ticks: {
+                                color: 'rgba(255,255,255,0.85)',
+                                callback: (v) => `${Math.floor(v/60)}:${String(Math.floor(v%60)).padStart(2,'0')}`
+                            },
+                            grid: { color: 'rgba(255,255,255,0.08)' },
+                            title: { display: true, text: '时间(mm:ss)', color: 'rgba(255,255,255,0.85)' }
+                        },
+                        y: {
+                            position: 'left',
+                            ticks: { color: 'rgba(255,255,255,0.85)' },
+                            grid: { color: 'rgba(255,255,255,0.08)' }
+                        },
+                        y1: {
+                            position: 'right',
+                            ticks: { color: 'rgba(255,255,255,0.85)' },
+                            grid: { drawOnChartArea: false }
+                        }
+                    }
+                }
+            });
+        }
+
+        async function loadRecordList() {
+            const response = await fetch(`${SERVER_URL}/api/sport_records?reverse=1&include_series=0`);
+            const records = await response.json();
+            const select = document.getElementById('recordSelect');
+            select.innerHTML = '';
+
+            records.forEach(r => {
+                const option = document.createElement('option');
+                option.value = r._index;
+                const minutes = Math.floor((Number(r.duration) || 0) / 60);
+                option.textContent = `${r.time || '未知时间'} | ${minutes}分 | ${r.pace || "--'--\""}`;
+                select.appendChild(option);
+            });
+
+            const qIndex = getQueryIndex();
+            if (qIndex !== null && records.some(r => Number(r._index) === qIndex)) {
+                select.value = String(qIndex);
+            }
+
+            select.onchange = () => loadRecordDetail(Number(select.value));
+
+            if (select.value) {
+                await loadRecordDetail(Number(select.value));
+            } else {
+                document.getElementById('recordHint').textContent = '暂无记录';
+                showEmptyState(true);
+            }
+        }
+
+        async function loadRecordDetail(index) {
+            const response = await fetch(`${SERVER_URL}/api/sport_records/${index}?include_series=1`);
+            const record = await response.json();
+
+            if (record && record.status === 'error') {
+                document.getElementById('recordHint').textContent = record.message || '记录不存在';
+                showEmptyState(true);
+                return;
+            }
+
+            setSummary(record);
+
+            const series = Array.isArray(record.series) ? record.series : [];
+            const hasTrack = renderTrack(record, series);
+            const hasSeries = series.length > 0;
+
+            if (!hasSeries) {
+                destroyChart(paceChart);
+                destroyChart(cadenceStrideChart);
+                destroyChart(carbonDistanceChart);
+            }
+
+            showEmptyState(!hasSeries && !hasTrack, hasSeries);
+            if (hasSeries) {
+                renderCharts(series);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadRecordList().catch(() => {
+                document.getElementById('recordHint').textContent = '加载失败';
+                showEmptyState(true);
+            });
+        });
+    </script>
+</body>
+</html>

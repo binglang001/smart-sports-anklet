@@ -122,6 +122,7 @@
         }
 
         .mode-slider {
+            --mode-count: 3;
             position: relative;
             height: 50px;
             background: rgba(0,0,0,0.3);
@@ -133,7 +134,7 @@
         .mode-indicator {
             position: absolute;
             height: 100%;
-            width: 25%;
+            width: calc(100% / var(--mode-count));
             background: linear-gradient(135deg, #00ff88, #00ccff);
             border-radius: 25px;
             transition: left 0.3s ease;
@@ -882,45 +883,13 @@
                     <div class="emergency-content" id="mobileSportRecordsContent"></div>
                 </div>
 
-                <!-- 历史数据分析 -->
+                <!-- 历史数据统计 -->
                 <div class="history-container">
-                    <div class="history-header" onclick="toggleMobileHistory()">
-                        <div style="font-size: 14px; font-weight: 500;">
-                            历史分析 (<span id="mobileHistoryDays">7</span>天)
-                        </div>
-                        <div style="font-size: 20px;" id="mobileHistoryArrow">▼</div>
+                    <div class="history-header">
+                        <div style="font-size: 14px; font-weight: 500;">历史数据统计</div>
                     </div>
-                    <div class="history-content" id="mobileHistoryContent">
-                        <!-- 天数选择 -->
-                        <div class="history-days-selector">
-                            <button class="history-day-btn" onclick="loadHistoryData(7)">7天</button>
-                            <button class="history-day-btn active" onclick="loadHistoryData(14)">14天</button>
-                            <button class="history-day-btn" onclick="loadHistoryData(30)">30天</button>
-                        </div>
-                        <!-- 统计卡片 -->
-                        <div class="history-stats">
-                            <div class="history-stat-card">
-                                <div class="history-stat-label">总步数</div>
-                                <div class="history-stat-value" id="mobileHistoryTotalSteps">0</div>
-                            </div>
-                            <div class="history-stat-card">
-                                <div class="history-stat-label">总时长</div>
-                                <div class="history-stat-value" id="mobileHistoryTotalTime">0分</div>
-                            </div>
-                            <div class="history-stat-card">
-                                <div class="history-stat-label">总减碳</div>
-                                <div class="history-stat-value" id="mobileHistoryTotalCarbon">0g</div>
-                            </div>
-                            <div class="history-stat-card">
-                                <div class="history-stat-label">日均步数</div>
-                                <div class="history-stat-value" id="mobileHistoryAvgSteps">0</div>
-                            </div>
-                        </div>
-                        <!-- 图表 -->
-                        <div class="history-chart-container">
-                            <div class="history-chart-title">步数趋势</div>
-                            <canvas id="mobileHistoryChart" class="history-chart"></canvas>
-                        </div>
+                    <div style="padding: 15px;">
+                        <button class="control-btn" style="width: 100%;" onclick="window.location.href='/history'">查看历史统计</button>
                     </div>
                 </div>
 
@@ -1069,57 +1038,10 @@
                         </div>
                     </div>
 
-                    <!-- 历史数据分析 - 可折叠 -->
+                    <!-- 历史数据统计 -->
                     <div style="margin-top: 20px;">
-                        <div class="history-header" onclick="toggleDesktopHistory()" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 2px solid rgba(255,255,255,0.2);">
-                            <div class="card-title" style="margin: 0; border: none; padding: 0;">历史数据分析</div>
-                            <div style="font-size: 20px;" id="desktopHistoryArrow">▼</div>
-                        </div>
-                        <div class="history-content" id="desktopHistoryContent" style="max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out;">
-                            <div style="padding-top: 15px;">
-                                <div style="margin-bottom: 15px;">
-                                    <div class="history-days-selector">
-                                        <button class="history-day-btn" onclick="loadHistoryData(7)">7天</button>
-                                        <button class="history-day-btn active" onclick="loadHistoryData(14)">14天</button>
-                                        <button class="history-day-btn" onclick="loadHistoryData(30)">30天</button>
-                                    </div>
-                                </div>
-                                <!-- 统计卡片 -->
-                                <div class="history-stats">
-                                    <div class="history-stat-card">
-                                        <div class="history-stat-label">总步数</div>
-                                        <div class="history-stat-value" id="desktopHistoryTotalSteps">0</div>
-                                    </div>
-                                    <div class="history-stat-card">
-                                        <div class="history-stat-label">总时长</div>
-                                        <div class="history-stat-value" id="desktopHistoryTotalTime">0分</div>
-                                    </div>
-                                    <div class="history-stat-card">
-                                        <div class="history-stat-label">总减碳</div>
-                                        <div class="history-stat-value" id="desktopHistoryTotalCarbon">0g</div>
-                                    </div>
-                                    <div class="history-stat-card">
-                                        <div class="history-stat-label">日均步数</div>
-                                        <div class="history-stat-value" id="desktopHistoryAvgSteps">0</div>
-                                    </div>
-                                </div>
-                                <!-- 步数趋势图 -->
-                                <div class="history-chart-container">
-                                    <div class="history-chart-title">步数趋势</div>
-                                    <canvas id="desktopHistoryStepsChart" style="height: 200px;"></canvas>
-                                </div>
-                                <!-- 运动时长趋势图 -->
-                                <div class="history-chart-container" style="margin-top: 15px;">
-                                    <div class="history-chart-title">运动时长趋势 (分钟)</div>
-                                    <canvas id="desktopHistoryTimeChart" style="height: 200px;"></canvas>
-                                </div>
-                                <!-- 碳排放趋势图 -->
-                                <div class="history-chart-container" style="margin-top: 15px;">
-                                    <div class="history-chart-title">碳减排趋势 (克)</div>
-                                    <canvas id="desktopHistoryCarbonChart" style="height: 200px;"></canvas>
-                                </div>
-                            </div>
-                        </div>
+                        <div class="card-title">历史数据统计</div>
+                        <button class="control-btn" style="width: 100%;" onclick="window.location.href='/history'">查看历史统计</button>
                     </div>
                 </div>
             </div>
@@ -1143,6 +1065,7 @@
     </div>
 
     <script>
+        const MODE_OPTIONS = ['生活', '运动', '会议'];
         let currentMode = 0;
         let emergencyExpanded = false;
         let sportRecordsExpanded = false;
@@ -1157,6 +1080,7 @@
 
         // 初始化
         document.addEventListener('DOMContentLoaded', function() {
+            renderMobileModeLabels();
             initMobileSlider();
             loadSettings();
             refreshData();
@@ -1164,25 +1088,47 @@
             setInterval(refreshData, 2000);
         });
 
+        function clampMode(mode) {
+            return Math.max(0, Math.min(mode, MODE_OPTIONS.length - 1));
+        }
+
+        function renderMobileModeLabels() {
+            const slider = document.getElementById('mobileSlider');
+            const labelsContainer = document.querySelector('.mode-labels');
+
+            slider.style.setProperty('--mode-count', MODE_OPTIONS.length);
+            labelsContainer.innerHTML = '';
+
+            MODE_OPTIONS.forEach((modeName, index) => {
+                const label = document.createElement('div');
+                label.className = index === currentMode ? 'mode-label active' : 'mode-label';
+                label.textContent = modeName;
+                labelsContainer.appendChild(label);
+            });
+        }
+
         // 手机端模式滑块
         function initMobileSlider() {
             const slider = document.getElementById('mobileSlider');
             slider.addEventListener('click', function(e) {
                 const rect = slider.getBoundingClientRect();
                 const x = e.clientX - rect.left;
-                const mode = Math.floor((x / rect.width) * 4);
-                changeMode(Math.min(mode, 3));
+                const segmentWidth = rect.width / MODE_OPTIONS.length;
+                const mode = Math.floor(x / segmentWidth);
+                changeMode(clampMode(mode));
             });
         }
 
         function updateMobileSlider(mode) {
+            mode = clampMode(mode);
             const indicator = document.getElementById('mobileIndicator');
             const modeName = document.getElementById('mobileModeName');
             const labels = document.querySelectorAll('.mode-label');
-            const modeNames = ['生活', '运动', '会议'];
+            const stepPercent = 100 / MODE_OPTIONS.length;
 
-            indicator.style.left = (mode * 25) + '%';
-            modeName.textContent = modeNames[mode];
+            indicator.style.width = stepPercent + '%';
+            indicator.style.left = (mode * stepPercent) + '%';
+            modeName.textContent = MODE_OPTIONS[mode];
 
             labels.forEach((label, index) => {
                 if (index === mode) {
@@ -1192,9 +1138,10 @@
                 }
             });
         }
-
+        
         // 切换模式
         function changeMode(mode) {
+            mode = clampMode(mode);
             currentMode = mode;
             
             updateMobileSlider(mode);
@@ -1383,21 +1330,32 @@
         // 加载运动记录
         async function loadSportRecords() {
             try {
-                const response = await fetch(`${SERVER_URL}/api/sport_records`);
+                const response = await fetch(`${SERVER_URL}/api/sport_records?reverse=1&limit=200&include_series=0`);
                 const records = await response.json();
 
                 document.getElementById('mobileSportRecordsCount').textContent = records.length;
                 const mobileContent = document.getElementById('mobileSportRecordsContent');
                 mobileContent.innerHTML = '';
                 
-                records.slice(-5).reverse().forEach(record => {
+                records.slice(0, 5).forEach(record => {
                     const item = document.createElement('div');
                     item.className = 'sport-record-item';
-                    const duration = Math.floor(record.duration / 60);
+                    const duration = Math.floor((Number(record.duration) || 0) / 60);
+                    const step = Number(record.step) || 0;
+                    const cadence = record.avg_cadence_spm !== undefined && record.avg_cadence_spm !== null ? record.avg_cadence_spm : '--';
+                    const stride = record.avg_stride_m !== undefined && record.avg_stride_m !== null ? record.avg_stride_m : '--';
+                    const carbon = record.carbon_reduce !== undefined && record.carbon_reduce !== null ? Math.round(Number(record.carbon_reduce) * 100) / 100 : 0;
+                    const pace = record.pace || "--'--\"";
+                    const recordIndex = record._index;
+                    if (recordIndex !== undefined && recordIndex !== null) {
+                        item.style.cursor = 'pointer';
+                        item.onclick = () => window.location.href = `/sport_record_detail?index=${recordIndex}`;
+                    }
                     item.innerHTML = `
                         <div style="font-weight: 600; margin-bottom: 3px;">${record.time}</div>
                         <div>模式: ${record.mode} | 时长: ${duration}分钟</div>
-                        <div>平均配速: ${record.pace}</div>
+                        <div>步数: ${step} | 步频: ${cadence}spm | 步幅: ${stride}m</div>
+                        <div>平均配速: ${pace} | 减碳: ${carbon}g</div>
                     `;
                     mobileContent.appendChild(item);
                 });
@@ -1407,14 +1365,25 @@
                     desktopList.innerHTML = '<div style="text-align: center; padding: 40px; opacity: 0.5;">暂无运动记录</div>';
                 } else {
                     desktopList.innerHTML = '';
-                    records.reverse().forEach(record => {
+                    records.forEach(record => {
                         const item = document.createElement('div');
-                        const duration = Math.floor(record.duration / 60);
+                        const duration = Math.floor((Number(record.duration) || 0) / 60);
+                        const step = Number(record.step) || 0;
+                        const cadence = record.avg_cadence_spm !== undefined && record.avg_cadence_spm !== null ? record.avg_cadence_spm : '--';
+                        const stride = record.avg_stride_m !== undefined && record.avg_stride_m !== null ? record.avg_stride_m : '--';
+                        const carbon = record.carbon_reduce !== undefined && record.carbon_reduce !== null ? Math.round(Number(record.carbon_reduce) * 100) / 100 : 0;
+                        const pace = record.pace || "--'--\"";
+                        const recordIndex = record._index;
                         item.style.cssText = 'background: rgba(255,255,255,0.1); padding: 15px; margin-bottom: 15px; border-radius: 8px;';
+                        if (recordIndex !== undefined && recordIndex !== null) {
+                            item.style.cursor = 'pointer';
+                            item.onclick = () => window.location.href = `/sport_record_detail?index=${recordIndex}`;
+                        }
                         item.innerHTML = `
                             <div style="font-weight: 600; margin-bottom: 8px;">${record.time}</div>
-                            <div style="margin-bottom: 5px;">模式: ${record.mode} | 时长: ${duration}分钟</div>
-                            <div style="font-size: 14px;">平均配速: ${record.pace}</div>
+                            <div style="margin-bottom: 5px;">步数: ${step} | 步频: ${cadence}spm | 步幅: ${stride}m</div>
+                            <div style="margin-bottom: 5px;">平均配速: ${pace} | 减碳: ${carbon}g</div>
+                            <div style="font-size: 12px; opacity: 0.75;">点击查看详情</div>
                         `;
                         desktopList.appendChild(item);
                     });

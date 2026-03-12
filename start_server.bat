@@ -35,7 +35,7 @@ if %errorlevel% neq 0 (
 echo.
 
 REM 创建数据目录
-if not exist "data" mkdir data
+if not exist "server\data" mkdir server\data
 echo [3/3] 数据目录准备完成 ✓
 echo.
 

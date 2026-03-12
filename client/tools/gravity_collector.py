@@ -12,22 +12,18 @@
 
 import time
 import csv
-import os
-import sys
 import signal
 
-# 添加项目根目录到路径
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common import ensure_project_root, get_client_data_dir, ensure_output_dir as ensure_dir_exists, build_timestamped_filename
+
+ensure_project_root()
 
 # 导入日志模块
 from utils.logger import get_logger
 logger = get_logger('tools.gravity_collector')
 
 # 输出目录
-OUTPUT_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "data", "gravity"
-)
+OUTPUT_DIR = get_client_data_dir("gravity")
 
 # 全局标志
 running = True
@@ -40,20 +36,6 @@ def signal_handler(_, __):
     running = False
 
 
-def ensure_output_dir():
-    """确保输出目录存在"""
-    global OUTPUT_DIR
-    if not os.path.exists(OUTPUT_DIR):
-        os.makedirs(OUTPUT_DIR)
-        logger.info(f"创建数据目录: {OUTPUT_DIR}")
-
-
-def get_output_filename(prefix="gravity_data"):
-    """获取带时间戳的输出文件名"""
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    return os.path.join(OUTPUT_DIR, f"{prefix}_{timestamp}.csv")
-
-
 def collect_data(duration_seconds=None):
     """
     采集重力去除数据
@@ -64,8 +46,9 @@ def collect_data(duration_seconds=None):
     global running
     running = True
 
-    ensure_output_dir()
-    output_file = get_output_filename()
+    ensure_dir_exists(OUTPUT_DIR)
+    logger.info(f"使用数据目录: {OUTPUT_DIR}")
+    output_file = build_timestamped_filename(OUTPUT_DIR, "gravity_data")
     logger.info(f"输出文件: {output_file}")
 
     # 使用主程序的高频采样器
@@ -117,13 +100,6 @@ def collect_data(duration_seconds=None):
                 # 保存所有新数据
                 for d in detect_data:
                     if d['sample_idx'] > last_saved_idx:
-                        # 获取重力加速度
-                        gravity_remover = sampler._gravity_remover
-                        if gravity_remover:
-                            gx, gy, gz = gravity_remover.get_gravity()
-                        else:
-                            gx, gy, gz = 0, 0, 0
-
                         writer.writerow({
                             'timestamp': d['timestamp'],
                             'sample_idx': d['sample_idx'],
@@ -131,9 +107,9 @@ def collect_data(duration_seconds=None):
                             'acc_y': d['ay'],
                             'acc_z': d['az'],
                             'acc_magnitude': d['acc_mag'],
-                            'gravity_x': gx,
-                            'gravity_y': gy,
-                            'gravity_z': gz,
+                            'gravity_x': d.get('gravity_x', 0),
+                            'gravity_y': d.get('gravity_y', 0),
+                            'gravity_z': d.get('gravity_z', 0),
                             'linear_x': d['linear_x'],
                             'linear_y': d['linear_y'],
                             'linear_z': d['linear_z'],

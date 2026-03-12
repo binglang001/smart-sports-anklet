@@ -11,10 +11,10 @@ import os
 import sys
 import math
 import argparse
-import platform
 
-# 添加项目根目录到路径
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common import ensure_project_root, setup_chinese_font
+
+ensure_project_root()
 
 # 导入配置文件
 import config
@@ -28,30 +28,6 @@ from sensors.gravity_remover import GravityRemover
 
 # 从配置文件读取默认参数
 DEFAULT_WINDOW_SIZE = config.STEP_CONFIG.get("window_size", 7)
-
-# 配置matplotlib中文字体
-def setup_chinese_font():
-    """配置中文字体支持"""
-    import matplotlib
-    matplotlib.use('Agg')
-    import matplotlib.pyplot as plt
-
-    # 根据操作系统选择字体
-    if platform.system() == 'Windows':
-        # Windows中文字体
-        plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'SimSun', 'Arial']
-    elif platform.system() == 'Darwin':
-        # macOS
-        plt.rcParams['font.sans-serif'] = ['PingFang SC', 'Hiragino Sans GB', 'Arial Unicode MS']
-    else:
-        # Linux
-        plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'Noto Sans CJK SC', 'Droid Sans Fallback']
-
-    # 解决负号显示问题
-    plt.rcParams['axes.unicode_minus'] = False
-
-    return plt
-
 
 def load_data(csv_file):
     """加载CSV数据（包括原始加速度，用于重力去除）"""

@@ -52,7 +52,8 @@ class StepDetector:
         from .gravity_remover import GravityRemover
         self.gravity_remover = GravityRemover()
 
-    def add_sample(self, acc_x, acc_y, acc_z, gyro_x=None, gyro_y=None, gyro_z=None, timestamp=None):
+    def add_sample(self, acc_x, acc_y, acc_z, gyro_x=None, gyro_y=None, gyro_z=None,
+                   timestamp=None, already_linear=False, raw_acc=None):
         """
         添加样本进行步数检测
 
@@ -67,17 +68,25 @@ class StepDetector:
         if timestamp is None:
             timestamp = time.time()
 
-        # 计算原始合加速度
-        acc_magnitude = math.sqrt(acc_x**2 + acc_y**2 + acc_z**2)
+        if already_linear:
+            linear_x, linear_y, linear_z = acc_x, acc_y, acc_z
+            if raw_acc is None:
+                raw_x, raw_y, raw_z = acc_x, acc_y, acc_z
+            else:
+                raw_x, raw_y, raw_z = raw_acc
+            acc_magnitude = math.sqrt(raw_x**2 + raw_y**2 + raw_z**2)
+        else:
+            raw_x, raw_y, raw_z = acc_x, acc_y, acc_z
+            acc_magnitude = math.sqrt(acc_x**2 + acc_y**2 + acc_z**2)
 
-        # 使用重力去除器处理（即使没有陀螺仪也进行重力去除）
-        linear_acc = self.gravity_remover.add_sample(
-            acc_x, acc_y, acc_z,
-            gyro_x, gyro_y, gyro_z,
-            timestamp
-        )
+            # 使用重力去除器处理（即使没有陀螺仪也进行重力去除）
+            linear_acc = self.gravity_remover.add_sample(
+                acc_x, acc_y, acc_z,
+                gyro_x, gyro_y, gyro_z,
+                timestamp
+            )
 
-        linear_x, linear_y, linear_z = linear_acc
+            linear_x, linear_y, linear_z = linear_acc
 
         # 使用Y轴（垂直方向）投影作为合加速度
         # Y轴负方向向上，垂直方向加速度可有正负
@@ -92,9 +101,9 @@ class StepDetector:
             "timestamp": timestamp,
             "acc": acc_deviation,
             "acc_raw": acc_magnitude,
-            "ax": acc_x,
-            "ay": acc_y,
-            "az": acc_z,
+            "ax": raw_x,
+            "ay": raw_y,
+            "az": raw_z,
             "linear_x": linear_x,
             "linear_y": linear_y,
             "linear_z": linear_z
