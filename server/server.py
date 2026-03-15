@@ -158,7 +158,7 @@ def load_data():
 
 
 def init_device_daily_counters_from_history(now=None):
-    """服务端重启后，用已持久化的今日数据恢复计数器，避免回到0。"""
+    """服务端重启后，用已持久化的今日数据恢复计数器，避免回到0"""
     global device_last_step, device_stats_date
 
     if now is None:

@@ -1,5 +1,5 @@
 # -*- coding: UTF-8 -*-
-"""离线缓存与批量同步服务。"""
+"""离线缓存与批量同步服务"""
 
 from datetime import datetime
 import json
@@ -14,7 +14,7 @@ logger = get_logger('services.offline_manager')
 
 
 class OfflineManager:
-    """离线数据管理器。"""
+    """离线数据管理器"""
 
     def __init__(self, server_url, cache_dir="/root/.smart-sports-belt"):
         self.server_url = server_url.rstrip('/')
@@ -84,7 +84,7 @@ class OfflineManager:
             pass
 
     def append_pending_record(self, record):
-        """追加待同步记录。"""
+        """追加待同步记录"""
         self.pending_data.append(record)
         self._save_pending()
 
@@ -111,7 +111,7 @@ class OfflineManager:
         self._save_cache()
 
     def set_online_status(self, is_online):
-        """设置在线状态。"""
+        """设置在线状态"""
         was_offline = not self.is_online
         self.is_online = is_online
         if was_offline and is_online:
@@ -120,7 +120,7 @@ class OfflineManager:
             logger.info("已切换到离线模式")
 
     def try_connect(self):
-        """尝试连接服务器，返回是否成功。"""
+        """尝试连接服务器，返回是否成功"""
         try:
             from requests.adapters import HTTPAdapter
             from urllib3.util.retry import Retry
@@ -137,7 +137,7 @@ class OfflineManager:
             return False
 
     def sync_all_pending(self):
-        """批量同步所有待上传记录。"""
+        """批量同步所有待上传记录"""
         if not self.is_online or not self.pending_data:
             return 0
 

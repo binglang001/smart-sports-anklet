@@ -83,7 +83,6 @@ try:
 except ImportError as e:
     sensors_module_available = False
     logger.critical(f"sensors模块加载失败: {e}\n{traceback.format_exc()}")
-    print(f"FATAL: sensors模块加载失败: {e}")
     sys.exit(1)
 
 # 高频采样器实例
@@ -379,14 +378,14 @@ led_position = 0
 
 
 def _set_message_scroller_state(is_showing, message):
-    """同步滚动消息状态到主程序全局变量。"""
+    """同步滚动消息状态到主程序全局变量"""
     global message_showing, current_message
     message_showing = is_showing
     current_message = message
 
 
 def ensure_message_scroller():
-    """按需创建滚动消息控制器。"""
+    """按需创建滚动消息控制器"""
     global message_scroller
 
     if message_scroller is None:
@@ -413,7 +412,7 @@ def ensure_message_scroller():
 
 
 def restore_today_stats_from_server():
-    """启动时从服务端恢复今日统计，避免设备端与服务端口径不一致。"""
+    """启动时从服务端恢复今日统计，避免设备端与服务端口径不一致"""
     global step_count, carbon_reduce_count, sport_time_today, activity_hours
 
     try:
@@ -618,16 +617,16 @@ def get_environment_status():
         # 播报温度
         if temp_tip_level != 0:
             if temp_tip_level < 0:
-                voice_text += f"当前温度{int(temp)}度，请注意保暖。"
+                voice_text += f"当前温度{int(temp)}度，请注意保暖"
             else:
-                voice_text += f"当前温度{int(temp)}度，请注意降温。"
+                voice_text += f"当前温度{int(temp)}度，请注意降温"
 
         # 播报湿度
         if humi_tip_level:
             if humi_tip_level == 1:
-                voice_text += f"当前湿度{int(humi)}%，请注意补水。"
+                voice_text += f"当前湿度{int(humi)}%，请注意补水"
             else:
-                voice_text += f"当前湿度{int(humi)}%，请注意防潮。"
+                voice_text += f"当前湿度{int(humi)}%，请注意防潮"
 
     return all_status, voice_text
 
@@ -1244,7 +1243,7 @@ def _pace_str_to_sec_per_km(pace_str):
 
 
 def _is_valid_running_pace(pace_min_per_km):
-    """按运行配速范围判断是否为有效值。"""
+    """按运行配速范围判断是否为有效值"""
     if pace_min_per_km is None:
         return False
     try:
@@ -1255,7 +1254,7 @@ def _is_valid_running_pace(pace_min_per_km):
 
 
 def _reset_sport_gnss_state(now=None):
-    """重置运动会话的 GNSS 轨迹状态。"""
+    """重置运动会话的 GNSS 轨迹状态"""
     global sport_gnss_track, sport_gnss_last_point, sport_gnss_last_track_ts
     global sport_gnss_distance_km, sport_gnss_fix_samples, sport_gnss_total_samples
     global sport_gnss_satellite_max, sport_gnss_latest_point, sport_gnss_last_step_count
@@ -1275,12 +1274,12 @@ def _reset_sport_gnss_state(now=None):
 
 
 def _should_use_gnss_distance():
-    """满足条件时优先使用 GNSS 距离。"""
+    """满足条件时优先使用 GNSS 距离"""
     return sport_gnss_distance_km > 0 and len(sport_gnss_track) >= 3
 
 
 def _update_gnss_track(sat_count=0, now=None):
-    """按秒更新一次 GNSS 轨迹点。"""
+    """按秒更新一次 GNSS 轨迹点"""
     global sport_gnss_track, sport_gnss_last_point, sport_gnss_last_track_ts
     global sport_gnss_distance_km, sport_gnss_fix_samples, sport_gnss_total_samples
     global sport_gnss_satellite_max, sport_gnss_latest_point, sport_gnss_last_step_count
@@ -1369,7 +1368,7 @@ def _update_gnss_track(sat_count=0, now=None):
 
 
 def _reset_sport_series(now=None):
-    """开始新的运动会话时，重置曲线与累计距离。"""
+    """开始新的运动会话时，重置曲线与累计距离"""
     global sport_series, sport_series_last_ts, sport_series_last_step, sport_series_last_point_ts
     global sport_session_distance_km, sport_last_stride_m, sport_last_cadence_spm
 
@@ -1387,7 +1386,7 @@ def _reset_sport_series(now=None):
 
 
 def _update_sport_series(now=None, force_point=False):
-    """更新运动曲线与累计距离（低频采样）。"""
+    """更新运动曲线与累计距离（低频采样）"""
     global sport_series_last_ts, sport_series_last_step, sport_series_last_point_ts
     global sport_session_distance_km, sport_last_stride_m, sport_last_cadence_spm
 

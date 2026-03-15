@@ -1,5 +1,5 @@
 # -*- coding: UTF-8 -*-
-"""旋转滚动消息显示。"""
+"""旋转滚动消息显示"""
 
 import threading
 import time
@@ -12,7 +12,7 @@ PUNCTUATION = set(['，', '。', '、', '！', '？', '；', '：', '…', ',', 
 
 
 def split_message_tokens(message):
-    """将标点附着到前一个字符，减少滚动时的视觉抖动。"""
+    """将标点附着到前一个字符，减少滚动时的视觉抖动"""
     tokens = []
     for char in message:
         if char in PUNCTUATION and tokens:
@@ -23,7 +23,7 @@ def split_message_tokens(message):
 
 
 def estimate_text_units(text):
-    """估算文本宽度单位，用于滚动时长估计。"""
+    """估算文本宽度单位，用于滚动时长估计"""
     total = 0.0
     for char in text:
         if char.isspace():
@@ -42,7 +42,7 @@ def estimate_text_units(text):
 
 
 class RotatedMessageScroller:
-    """将文本整体旋转 90 度后进行滚动显示。"""
+    """将文本整体旋转 90 度后进行滚动显示"""
 
     def __init__(
         self,
@@ -100,7 +100,7 @@ class RotatedMessageScroller:
                 logger.debug(f"更新消息状态回调失败: {e}")
 
     def show(self, message):
-        """显示滚动消息。"""
+        """显示滚动消息"""
         self.stop_voice_callback()
 
         with self._lock:
@@ -117,7 +117,7 @@ class RotatedMessageScroller:
             self._thread.start()
 
     def hide(self):
-        """退出滚动显示。"""
+        """退出滚动显示"""
         self._update_state(False, "")
         self.stop_voice_callback()
         time.sleep(0.08)

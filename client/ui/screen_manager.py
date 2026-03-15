@@ -1,5 +1,5 @@
 # -*- coding: UTF-8 -*-
-"""设备端界面元素创建与显隐管理。"""
+"""设备端界面元素创建与显隐管理"""
 
 LIFE_MODE_KEYS = (
     'background_life',
@@ -40,7 +40,7 @@ ALL_UI_KEYS = (
 
 
 def create_ui_elements(gui):
-    """创建所有模式下需要的 UI 元素。"""
+    """创建所有模式下需要的 UI 元素"""
     if not gui:
         return {}
 
@@ -107,12 +107,12 @@ def _set_elements_state(ui_elements, keys, state):
 
 
 def hide_all_ui(ui_elements):
-    """隐藏所有 UI 元素。"""
+    """隐藏所有 UI 元素"""
     _set_elements_state(ui_elements, ALL_UI_KEYS, 'hidden')
 
 
 def update_ui_mode(ui_elements, current_mode, message_showing, mode_life, mode_sport, mode_meeting):
-    """根据模式切换界面显示。"""
+    """根据模式切换界面显示"""
     if message_showing:
         return
 

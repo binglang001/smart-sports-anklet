@@ -1,5 +1,5 @@
 # -*- coding: UTF-8 -*-
-"""GNSS 管理服务。"""
+"""GNSS 管理服务"""
 
 from datetime import datetime
 from glob import glob
@@ -21,7 +21,7 @@ GPS_BeiDou_GLONASS = None
 
 
 def _build_gnss_search_paths():
-    """构建 GNSS 驱动可能存在的搜索路径。"""
+    """构建 GNSS 驱动可能存在的搜索路径"""
     candidates = []
 
     env_path = os.environ.get('GNSS_LIB_PATH')
@@ -48,7 +48,7 @@ def _build_gnss_search_paths():
 
 
 def _bootstrap_gnss_driver():
-    """尝试导入 GNSS 驱动，并记录详细诊断信息。"""
+    """尝试导入 GNSS 驱动，并记录详细诊断信息"""
     global GNSS_AVAILABLE, GNSS_IMPORT_ERROR, GNSS_MODULE_PATH, GNSS_SEARCH_PATHS
     global DFRobot_GNSS_I2C, GPS_BeiDou_GLONASS
 
@@ -90,7 +90,7 @@ _bootstrap_gnss_driver()
 
 
 class GNSSManager:
-    """GNSS 管理器。"""
+    """GNSS 管理器"""
 
     def __init__(self, cfg=None):
         default_cfg = {
@@ -137,7 +137,7 @@ class GNSSManager:
             return False
 
     def start(self):
-        """启动 GNSS。"""
+        """启动 GNSS"""
         if not self.config["enabled"]:
             if not self._disabled_logged:
                 logger.info("GNSS已在配置中禁用")
@@ -168,7 +168,7 @@ class GNSSManager:
         return True
 
     def stop(self):
-        """停止 GNSS。"""
+        """停止 GNSS"""
         self.is_active = False
         self.last_satellite_count = 0
         if self.gnss:
@@ -179,7 +179,7 @@ class GNSSManager:
         self.gnss = None
 
     def _call_numeric(self, *method_names):
-        """按顺序调用 GNSS 数值接口，返回 float 或 None。"""
+        """按顺序调用 GNSS 数值接口，返回 float 或 None"""
         if not self.is_active or not self.gnss:
             return None
 
@@ -201,7 +201,7 @@ class GNSSManager:
 
     @staticmethod
     def _extract_attr(data, *names):
-        """兼容对象属性和字典字段读取。"""
+        """兼容对象属性和字典字段读取"""
         if data is None:
             return None
         if isinstance(data, dict):
@@ -217,7 +217,7 @@ class GNSSManager:
 
     @staticmethod
     def _to_signed_degree(value, direction=None):
-        """根据方向字段将经纬度转为带符号的十进制度。"""
+        """根据方向字段将经纬度转为带符号的十进制度"""
         try:
             degree = float(value)
         except (TypeError, ValueError):
@@ -232,7 +232,7 @@ class GNSSManager:
 
     @staticmethod
     def _is_valid_position(lat, lon):
-        """校验经纬度是否像一个真实定位结果。"""
+        """校验经纬度是否像一个真实定位结果"""
         try:
             lat = float(lat)
             lon = float(lon)
@@ -247,7 +247,7 @@ class GNSSManager:
 
     @staticmethod
     def haversine_distance_km(lat1, lon1, lat2, lon2):
-        """计算两经纬度点之间的大圆距离，单位 km。"""
+        """计算两经纬度点之间的大圆距离，单位 km"""
         try:
             lat1 = float(lat1)
             lon1 = float(lon1)
@@ -269,7 +269,7 @@ class GNSSManager:
         return radius_km * c
 
     def get_speed(self):
-        """获取速度(km/h)，无效返回 None。"""
+        """获取速度(km/h)，无效返回 None"""
         speed = self._call_numeric('get_sog', 'get_speed')
         if speed is None or speed < 0:
             return None
@@ -283,14 +283,14 @@ class GNSSManager:
         return speed
 
     def get_course(self):
-        """获取航向角(度)，无效返回 None。"""
+        """获取航向角(度)，无效返回 None"""
         course = self._call_numeric('get_cog', 'get_course')
         if course is None:
             return None
         return course % 360.0
 
     def get_position(self):
-        """获取当前位置，返回 {lat, lon} 或 None。"""
+        """获取当前位置，返回 {lat, lon} 或 None"""
         if not self.is_active or not self.gnss:
             return None
 
@@ -320,7 +320,7 @@ class GNSSManager:
         }
 
     def get_track_point(self, sat_count=None):
-        """获取轨迹点数据，便于运动记录直接落库。"""
+        """获取轨迹点数据，便于运动记录直接落库"""
         if not self.is_active or not self.gnss:
             return None
 
@@ -355,7 +355,7 @@ class GNSSManager:
         return point
 
     def get_satellite_count(self):
-        """获取当前使用卫星数。"""
+        """获取当前使用卫星数"""
         if not self.is_active or not self.gnss:
             self.last_satellite_count = 0
             return 0
@@ -368,15 +368,15 @@ class GNSSManager:
         return self.last_satellite_count
 
     def is_fix_satellite_count(self, sat_count):
-        """根据卫星数判断定位是否可用。"""
+        """根据卫星数判断定位是否可用"""
         return int(sat_count or 0) >= int(self.config.get('min_satellites', 5))
 
     def has_fix(self):
-        """是否达到可用卫星数阈值。"""
+        """是否达到可用卫星数阈值"""
         return self.is_fix_satellite_count(self.get_satellite_count())
 
     def has_valid_fix(self, sat_count=None):
-        """是否同时满足卫星数和坐标有效。"""
+        """是否同时满足卫星数和坐标有效"""
         if sat_count is None:
             sat_count = self.get_satellite_count()
         if not self.is_fix_satellite_count(sat_count):
@@ -384,7 +384,7 @@ class GNSSManager:
         return self.get_position() is not None
 
     def get_status_text(self, sat_count=None):
-        """获取简短 GNSS 状态文本。"""
+        """获取简短 GNSS 状态文本"""
         if not GNSS_AVAILABLE or not self.config.get('enabled', True):
             return 'GPS:--'
 
@@ -399,7 +399,7 @@ class GNSSManager:
         return 'GPS:关'
 
     def get_datetime(self):
-        """获取 GNSS 时间，返回 datetime 或 None。"""
+        """获取 GNSS 时间，返回 datetime 或 None"""
         if not self.is_active or not self.gnss:
             return None
 

@@ -29,7 +29,7 @@ _shared_log_file = None
 
 
 def _get_default_config():
-    """获取默认日志配置。"""
+    """获取默认日志配置"""
     try:
         from config import LOG_CONFIG
         return LOG_CONFIG
@@ -44,12 +44,12 @@ def _get_default_config():
 
 
 def _ensure_log_dir(log_dir):
-    """确保日志目录存在。"""
+    """确保日志目录存在"""
     os.makedirs(log_dir, exist_ok=True)
 
 
 def _get_shared_file_handler(config, formatter, level):
-    """获取本次运行共享的文件处理器。"""
+    """获取本次运行共享的文件处理器"""
     global _shared_file_handler, _shared_log_file
 
     if _shared_file_handler is not None:
@@ -75,7 +75,7 @@ def _get_shared_file_handler(config, formatter, level):
 
 
 def get_log_file_path():
-    """返回本次运行的日志文件路径。"""
+    """返回本次运行的日志文件路径"""
     return _shared_log_file
 
 
